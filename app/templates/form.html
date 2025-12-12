@@ -79,6 +79,49 @@
             // Тексты подсказок для каждого поля (передаются из сервера)
             const tooltipTexts = {{ tooltips | tojson }};
 
+            // Функция показа tooltip
+            function showTooltip(icon, tooltip) {
+                const iconRect = icon.getBoundingClientRect();
+                
+                // Центрируем tooltip относительно центра иконки
+                let left = iconRect.left + (iconRect.width / 2) - 100; // 200px ширина / 2 = 100px для центрирования
+                let top = iconRect.top + 25; // Всегда на 25px ниже иконки
+                
+                // Корректируем горизонтальное позиционирование
+                if (left < 10) left = 10;
+                if (left + 200 > window.innerWidth - 10) {
+                    left = window.innerWidth - 210; // 200px ширина + 10px отступ
+                }
+                
+                // Корректируем вертикальное позиционирование для мобильных
+                if (window.innerWidth <= 640) {
+                    // На мобильных показываем tooltip выше иконки
+                    top = iconRect.top - 80;
+                    if (top < 10) top = iconRect.top + 25; // Если не помещается сверху, показываем снизу
+                }
+                
+                tooltip.style.left = left + 'px';
+                tooltip.style.top = top + 'px';
+                tooltip.style.opacity = '1';
+                tooltip.style.visibility = 'visible';
+            }
+            
+            // Функция скрытия tooltip
+            function hideTooltip(tooltip) {
+                tooltip.style.opacity = '0';
+                tooltip.style.visibility = 'hidden';
+            }
+            
+            // Функция переключения tooltip
+            function toggleTooltip(icon, tooltip) {
+                const isVisible = tooltip.style.visibility === 'visible';
+                if (isVisible) {
+                    hideTooltip(tooltip);
+                } else {
+                    showTooltip(icon, tooltip);
+                }
+            }
+            
             // Создаем tooltip элементы для значков вопроса
             helpIcons.forEach((icon, index) => {
                 const tooltip = document.createElement('div');
@@ -86,30 +129,49 @@
                 tooltip.textContent = tooltipTexts[index] || icon.getAttribute('data-tooltip');
                 document.body.appendChild(tooltip);
                 
-                // Позиционируем tooltip при наведении
-                icon.addEventListener('mouseenter', function() {
-                    // Получаем позицию иконки с вопросом
-                    const iconRect = icon.getBoundingClientRect();
+                // Для desktop - используем hover события
+                if (!('ontouchstart' in window)) {
+                    icon.addEventListener('mouseenter', function() {
+                        showTooltip(icon, tooltip);
+                    });
                     
-                    // Центрируем tooltip относительно центра иконки
-                    let left = iconRect.left + (iconRect.width / 2) - 100; // 200px ширина / 2 = 100px для центрирования
-                    let top = iconRect.top + 25; // Всегда на 25px ниже иконки
-                    
-                    // Корректируем только горизонтальное позиционирование
-                    if (left < 10) left = 10;
-                    if (left + 200 > window.innerWidth - 10) {
-                        left = window.innerWidth - 210; // 200px ширина + 10px отступ
-                    }
-                    
-                    tooltip.style.left = left + 'px';
-                    tooltip.style.top = top + 'px';
-                    tooltip.style.opacity = '1';
-                    tooltip.style.visibility = 'visible';
+                    icon.addEventListener('mouseleave', function() {
+                        hideTooltip(tooltip);
+                    });
+                }
+                
+                // Для мобильных - используем tap события
+                icon.addEventListener('touchstart', function(e) {
+                    e.preventDefault(); // Предотвращаем default поведение
+                    toggleTooltip(icon, tooltip);
                 });
                 
-                icon.addEventListener('mouseleave', function() {
-                    tooltip.style.opacity = '0';
-                    tooltip.style.visibility = 'hidden';
+                // Дополнительная поддержка для устройств с мышью, но без hover
+                icon.addEventListener('click', function(e) {
+                    if ('ontouchstart' in window) {
+                        // На мобильных устройствах click может срабатывать после touch
+                        e.preventDefault();
+                        toggleTooltip(icon, tooltip);
+                    }
+                });
+            });
+            
+            // Закрываем все tooltip при клике вне их области
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.help-icon') && !e.target.closest('.tooltip')) {
+                    document.querySelectorAll('.tooltip').forEach(tooltip => {
+                        hideTooltip(tooltip);
+                    });
+                }
+            });
+            
+            // Закрываем tooltip при изменении размера окна (для корректного позиционирования)
+            window.addEventListener('resize', function() {
+                document.querySelectorAll('.tooltip[style*="visibility: visible"]').forEach(tooltip => {
+                    const icon = document.querySelector(`[data-tooltip="${tooltip.textContent}"]`);
+                    if (icon) {
+                        showTooltip(icon, tooltip);
+                    }
                 });
             });
             
@@ -273,6 +335,8 @@
             background: transparent;
             z-index: 1;
             overflow: visible;
+            -webkit-tap-highlight-color: transparent; /* Убираем подсветку на iOS */
+            user-select: none; /* Предотвращаем выделение текста на iOS */
         }
 
         .help-icon:hover {
@@ -280,6 +344,15 @@
             border-color: #FFFFFF;
             background: rgba(255, 255, 255, 0.15);
             transform: scale(1.1);
+            z-index: 2;
+        }
+
+        /* Стили для активного состояния на мобильных */
+        .help-icon:active {
+            color: #FFFFFF;
+            border-color: #FFFFFF;
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(0.95);
             z-index: 2;
         }
 
@@ -305,6 +378,8 @@
             border: 1px solid #8FA9D9;
             pointer-events: none;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            will-change: opacity; /* Оптимизация для анимаций */
+            -webkit-font-smoothing: antialiased; /* Улучшение шрифтов на iOS */
         }
 
         .help-icon:hover .tooltip {
@@ -339,7 +414,35 @@
                 font-size: 0.8rem;
                 padding: 6px 10px;
                 white-space: normal;
-                max-width: 200px;
+                max-width: 180px;
+                max-height: 80px;
+                line-height: 1.2;
+            }
+            
+            .help-icon {
+                width: 18px;
+                height: 18px;
+                font-size: 11px;
+                line-height: 16px;
+                margin-left: 6px;
+            }
+        }
+        
+        /* Дополнительная адаптивность для очень маленьких экранов */
+        @media (max-width: 375px) {
+            .tooltip {
+                font-size: 0.75rem;
+                padding: 5px 8px;
+                max-width: 160px;
+                max-height: 70px;
+            }
+            
+            .help-icon {
+                width: 16px;
+                height: 16px;
+                font-size: 10px;
+                line-height: 14px;
+                margin-left: 4px;
             }
         }
     </style>

@@ -345,19 +345,68 @@ def risk_bucket(prediction: int, lang: str) -> Tuple[str, str]:
 async def show_result(request: Request):    
     try:
         lang = "ru"
-        form_data = dict(await request.form())
+        
+        # Надежное получение данных формы с fallback
+        try:
+            # Сначала пробуем получить form-data
+            form_data = dict(await request.form())
+        except AssertionError as e:
+            if "python-multipart" in str(e):
+                # Если ошибка связана с python-multipart, пробуем альтернативный способ
+                print("python-multipart not available, trying alternative method...")
+                # Получаем raw данные и парсим вручную
+                raw_data = await request.body()
+                if raw_data:
+                    # Простой парсинг key=value&key2=value2
+                    form_data = {}
+                    try:
+                        raw_str = raw_data.decode('utf-8')
+                        for pair in raw_str.split('&'):
+                            if '=' in pair:
+                                key, value = pair.split('=', 1)
+                                form_data[key] = value
+                    except:
+                        form_data = {"error": "Failed to parse form data"}
+                else:
+                    form_data = {}
+            else:
+                raise e
+        except Exception as e:
+            print(f"Error parsing form data: {e}")
+            form_data = {"error": "Failed to parse form data"}
+        
+        # Определяем язык
         lang = pick_lang(request.query_params.get("lang", form_data.get("lang")))
         
         # Валидация данных формы
-        validation_errors = validate_form_data(form_data)
-        if validation_errors:
-            error_message = "Ошибки в данных: " + "; ".join(validation_errors)
+        if "error" not in form_data:
+            validation_errors = validate_form_data(form_data)
+            if validation_errors:
+                error_message = "Ошибки в данных: " + "; ".join(validation_errors)
+                return HTMLResponse(
+                    content=f"""
+                    <html>
+                    <body style="font-family: Arial, sans-serif; padding: 20px;">
+                        <h1 style="color: #ff4757;">Ошибка валидации данных</h1>
+                        <p>{error_message}</p>
+                        <a href="/form?lang={lang}" style="color: #2E5AAC;">← Вернуться к форме</a>
+                    </body>
+                    </html>
+                    """,
+                    status_code=400
+                )
+        
+        # Исключаем параметр lang из числовых данных
+        numeric_data = {k: v for k, v in form_data.items() if k != 'lang' and k != 'error'}
+        
+        # Проверяем, есть ли данные для обработки
+        if not numeric_data:
             return HTMLResponse(
                 content=f"""
                 <html>
                 <body style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h1 style="color: #ff4757;">Ошибка валидации данных</h1>
-                    <p>{error_message}</p>
+                    <h1 style="color: #ff4757;">Ошибка</h1>
+                    <p>Не получены данные формы</p>
                     <a href="/form?lang={lang}" style="color: #2E5AAC;">← Вернуться к форме</a>
                 </body>
                 </html>
@@ -365,12 +414,26 @@ async def show_result(request: Request):
                 status_code=400
             )
         
-        # Исключаем параметр lang из числовых данных
-        numeric_data = {k: v for k, v in form_data.items() if k != 'lang'}
-        prediction, probability = process(list(numeric_data.values()))
-        probability *= 100
-        probability = round(probability, 2)
-        label, color = risk_bucket(prediction, lang)
+        try:
+            prediction, probability = process(list(numeric_data.values()))
+            probability *= 100
+            probability = round(probability, 2)
+            label, color = risk_bucket(prediction, lang)
+        except Exception as e:
+            print(f"Error in prediction: {e}")
+            return HTMLResponse(
+                content=f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h1 style="color: #ff4757;">Ошибка обработки</h1>
+                    <p>Не удалось обработать данные: {str(e)}</p>
+                    <a href="/form?lang={lang}" style="color: #2E5AAC;">← Вернуться к форме</a>
+                </body>
+                </html>
+                """,
+                status_code=500
+            )
+        
         copy = RESULT_COPY[lang]
 
         rows = []
@@ -399,7 +462,16 @@ async def show_result(request: Request):
         error_msg = traceback.format_exc()
         print(f"Error in show_result: {error_msg}")
         return HTMLResponse(
-            content=f"<html><body><h1>Ошибка обработки данных</h1><pre>{error_msg}</pre><a href='/form?lang=ru'>Вернуться к форме</a></body></html>",
+            content=f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h1 style="color: #ff4757;">Внутренняя ошибка сервера</h1>
+                <p>Произошла ошибка при обработке запроса.</p>
+                <p>Попробуйте позже или обратитесь к администратору.</p>
+                <a href="/form?lang=ru" style="color: #2E5AAC;">← Вернуться к форме</a>
+            </body>
+            </html>
+            """,
             status_code=500
         )
 
