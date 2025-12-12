@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ content.page_title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+    <div class="page">
+        <header class="hero">
+            <div class="language-switch container">
+                <a class="lang-link {% if lang == 'ru' %}lang-link--active{% endif %}" href="/?lang=ru">RU</a>
+                <a class="lang-link {% if lang == 'en' %}lang-link--active{% endif %}" href="/?lang=en">EN</a>
+            </div>
+            <div class="hero__content container">
+                <p class="hero__eyebrow">{{ content.eyebrow }}</p>
+                <h1 class="hero__title">{{ content.hero_title }}</h1>
+                <p class="hero__subtitle">{{ content.hero_subtitle }}</p>
+                <a class="cta" href="/form?lang={{ lang }}">{{ content.cta }}</a>
+            </div>
+            <div class="hero__background">
+                <div class="glow glow--1"></div>
+                <div class="glow glow--2"></div>
+            </div>
+        </header>
+
+        <main>
+            <section class="features container">
+                {% for feature in content.features %}
+                <div class="feature-card">
+                    <h3>{{ feature.title }}</h3>
+                    <p>{{ feature.text }}</p>
+                </div>
+                {% endfor %}
+            </section>
+
+            <section class="technology">
+                <div class="technology__content container">
+                    <p>{{ content.technology }}</p>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <div class="container">
+                <div class="footer__divider"></div>
+                <p class="footer__text">{{ content.footer }}</p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
