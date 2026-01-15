@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<main class="container auth">
+    <div class="auth-card">
+        <h1>Вход</h1>
+        {% if error %}
+        <div class="alert">{{ error }}</div>
+        {% endif %}
+        <form action="/login?lang={{ lang }}" method="post" class="auth-form">
+            <label>Email</label>
+            <input type="email" name="email" required placeholder="you@example.com" />
+            <label>Пароль</label>
+            <div class="password-field">
+                <input type="password" name="password" id="login-password" required minlength="8" autocomplete="current-password" />
+                <button type="button" class="password-toggle" aria-label="Показать пароль" data-target="login-password">👁</button>
+            </div>
+            <button type="submit" class="cta">Войти</button>
+        </form>
+        <p class="auth-switch">Нет аккаунта? <a href="/register?lang={{ lang }}">Создать</a></p>
+    </div>
+</main>
+{% endblock %}

@@ -1,0 +1,250 @@
+{% extends "layout.html" %}
+
+{% block extra_head %}
+<style>
+.be-hero {
+    padding: 64px 0 32px;
+    background: linear-gradient(135deg, rgba(46,90,172,0.18), rgba(54,207,201,0.08));
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.be-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+}
+.be-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 16px;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.be-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(54,207,201,0.35);
+    box-shadow: 0 14px 28px rgba(0,0,0,0.25);
+}
+.be-card-title {
+    color: var(--steel-light);
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.be-card-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--white);
+}
+.be-alert {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid #ff7a7a;
+    background: rgba(255, 91, 91, 0.12);
+    color: #ffd6d6;
+}
+.chart-card, .table-card {
+    margin-top: 20px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 18px;
+}
+.chart-wrap {
+    position: relative;
+    height: 360px;
+    margin-top: 12px;
+}
+.scenario-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+.scenario-table th, .scenario-table td {
+    padding: 12px 10px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.scenario-table th {
+    color: var(--steel-light);
+    font-weight: 600;
+}
+.scenario-table tr:hover {
+    background: rgba(255,255,255,0.03);
+}
+.profit-pos { color: #2dd4bf; }
+.profit-neg { color: #ff7a7a; }
+.badge-be {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(54,207,201,0.16);
+    border: 1px solid rgba(54,207,201,0.4);
+    color: var(--white);
+    font-size: 12px;
+    margin-left: 8px;
+}
+.fade-in {
+    animation: fadeIn 0.35s ease;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="be-hero">
+    <div class="container">
+        <p class="hero__eyebrow">{{ nav.brand }}</p>
+        <h1 class="hero__title">{{ copy.result_title }}</h1>
+        <p class="hero__subtitle">{{ copy.hero_subtitle }}</p>
+    </div>
+</section>
+
+<section class="container fade-in" style="padding: 32px 0 48px;">
+    <div class="be-cards">
+        <div class="be-card">
+            <div class="be-card-title">{{ copy.be_units }}</div>
+            <div class="be-card-value">{{ be_units_ceil if be_units_ceil is not none else "—" }}</div>
+        </div>
+        <div class="be-card">
+            <div class="be-card-title">{{ copy.be_revenue }}</div>
+            <div class="be-card-value">{{ fmt(be_rev_ceil) if be_rev_ceil is not none else "—" }}</div>
+        </div>
+        <div class="be-card">
+            <div class="be-card-title">{{ copy.cm }}</div>
+            <div class="be-card-value">{{ fmt(cm) }}</div>
+        </div>
+    </div>
+
+    {% if cm <= 0 %}
+    <div class="be-alert">
+        {{ copy.unreachable }}
+    </div>
+    {% endif %}
+
+    <div class="chart-card">
+        <div class="table-heading" style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+            <div>
+                <h3 style="margin:0;color:var(--white);">{{ copy.chart_title }}</h3>
+                <p class="hero__subtitle" style="margin:4px 0 0;font-size:0.95rem;">{{ copy.hero_subtitle }}</p>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="breakevenChart"></canvas>
+        </div>
+    </div>
+
+    <div class="table-card">
+        <h3 style="margin:0 0 8px;color:var(--white);">{{ copy.table_title }}</h3>
+        <table class="scenario-table">
+            <thead>
+                <tr>
+                    <th>{{ copy.col_units }}</th>
+                    <th>{{ copy.col_revenue }}</th>
+                    <th>{{ copy.col_costs }}</th>
+                    <th>{{ copy.profit_before_be }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in scenarios %}
+                {% set profit_class = 'profit-pos' if row.profit >= 0 else 'profit-neg' %}
+                <tr>
+                    <td>
+                        {{ row.units }}
+                        {% if row.is_be %}
+                        <span class="badge-be">{{ copy.badge_be }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ fmt(row.revenue) }}</td>
+                    <td>{{ fmt(row.costs) }}</td>
+                    <td class="{{ profit_class }}">{{ fmt(row.profit) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(() => {
+  const ctx = document.getElementById("breakevenChart");
+  if (!ctx) return;
+  const labels = {{ labels | tojson }};
+  const profits = {{ profits | tojson }};
+  const beLine = {{ be_line | tojson }};
+  const points = labels.map((x, idx) => ({ x, y: profits[idx] }));
+  const dataSets = [
+    {
+      label: "{{ copy.profit_before_be }}",
+      data: points,
+      borderColor: "rgba(54, 207, 201, 0.9)",
+      backgroundColor: "rgba(54, 207, 201, 0.15)",
+      tension: 0.25,
+      fill: true,
+    },
+    {
+      label: "",
+      data: labels.map((x) => ({ x, y: 0 })),
+      borderColor: "rgba(255,255,255,0.25)",
+      borderDash: [6, 6],
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      borderWidth: 1,
+      _metaRole: "zeroLine",
+    },
+  ];
+  if (beLine.length === 2) {
+    dataSets.push({
+      label: "{{ copy.badge_be }}",
+      data: beLine,
+      borderColor: "rgba(255, 122, 122, 0.9)",
+      borderWidth: 1.5,
+      pointRadius: 0,
+      showLine: true,
+    });
+  }
+
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      datasets: dataSets,
+    },
+    options: {
+      responsive: true,
+      interaction: { intersect: false, mode: "index" },
+      plugins: {
+        legend: { labels: { color: "#dfe6f5", filter: (item) => !!item.text } },
+        tooltip: {
+          filter(ctx) { return ctx?.dataset?._metaRole !== "zeroLine"; },
+          backgroundColor: "rgba(15,18,26,0.92)",
+          borderColor: "rgba(255,255,255,0.12)",
+          borderWidth: 1,
+          titleColor: "#fff",
+          bodyColor: "#e6ecf5",
+        },
+      },
+      scales: {
+        x: {
+          type: "linear",
+          title: { display: true, text: "{{ copy.col_units }}", color: "#dfe6f5" },
+          ticks: { color: "#b7c5e4" },
+          grid: { color: "rgba(255,255,255,0.05)" },
+        },
+        y: {
+          title: { display: true, text: "{{ copy.profit_before_be }}", color: "#dfe6f5" },
+          ticks: { color: "#b7c5e4" },
+          grid: { color: "rgba(255,255,255,0.05)" },
+        },
+      },
+    },
+  });
+})();
+</script>
+{% endblock %}

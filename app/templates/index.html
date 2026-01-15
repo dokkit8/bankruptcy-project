@@ -1,56 +1,135 @@
-<!DOCTYPE html>
-<html lang="{{ lang }}">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ content.page_title }}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css" />
-</head>
-<body>
-    <div class="page">
-        <header class="hero">
-            <div class="language-switch container">
-                <a class="lang-link {% if lang == 'ru' %}lang-link--active{% endif %}" href="/?lang=ru">RU</a>
-                <a class="lang-link {% if lang == 'en' %}lang-link--active{% endif %}" href="/?lang=en">EN</a>
-            </div>
-            <div class="hero__content container">
+{% extends "layout.html" %}
+
+{% block content %}
+    <header class="hero reveal">
+        <div class="language-switch container">
+            <a class="lang-link {% if lang == 'ru' %}lang-link--active{% endif %}" href="/?lang=ru">RU</a>
+            <a class="lang-link {% if lang == 'en' %}lang-link--active{% endif %}" href="/?lang=en">EN</a>
+        </div>
+        <div class="hero__content container">
+            <div class="hero__text">
                 <p class="hero__eyebrow">{{ content.eyebrow }}</p>
                 <h1 class="hero__title">{{ content.hero_title }}</h1>
                 <p class="hero__subtitle">{{ content.hero_subtitle }}</p>
-                <a class="cta" href="/form?lang={{ lang }}">{{ content.cta }}</a>
+                <div class="hero__actions">
+                    <a class="cta" href="/form?lang={{ lang }}">{{ content.cta }}</a>
+                    {% if not user %}
+                    <a class="cta cta--ghost" href="{{ url_for('login_page') }}?lang={{ lang }}&next={{ request.url.path | urlencode }}">{{ content.hero_cta_save_history }}</a>
+                    {% else %}
+                    <a class="cta cta--ghost" href="{{ url_for('account_dashboard') }}?lang={{ lang }}">{{ content.hero_cta_dashboard }}</a>
+                    {% endif %}
+                </div>
             </div>
-            <div class="hero__background">
-                <div class="glow glow--1"></div>
-                <div class="glow glow--2"></div>
+            <div class="hero-mock">
+                <div class="hero-mock__card">
+                    <div class="hero-mock__value">23%</div>
+                    <div class="hero-mock__label">{{ content.preview_risk_label }}</div>
+                    <div class="hero-mock__status">{{ content.preview_status }}</div>
+                    <div class="hero-mock__badges">
+                        <span class="pill">{{ content.hero_badge_risk }}</span>
+                        <span class="pill">{{ content.hero_badge_model }}</span>
+                        <span class="pill">{{ content.hero_badge_whatif }}</span>
+                    </div>
+                    <div class="hero-mock__sparkline">
+                        <svg viewBox="0 0 120 36" preserveAspectRatio="none">
+                            <polyline points="0,28 20,22 40,26 60,14 80,18 100,8 120,12" fill="none" stroke="#36cfc9" stroke-width="2" stroke-linecap="round" />
+                        </svg>
+                    </div>
+                </div>
             </div>
-        </header>
+        </div>
+        <div class="hero__background">
+            <div class="glow glow--1"></div>
+            <div class="glow glow--2"></div>
+        </div>
+    </header>
 
-        <main>
-            <section class="features container">
-                {% for feature in content.features %}
-                <div class="feature-card">
-                    <h3>{{ feature.title }}</h3>
-                    <p>{{ feature.text }}</p>
+    <section class="container feature-duo">
+        <div class="feature-duo__card">
+            <div class="feature-duo__icon">📉</div>
+            <h3 class="feature-duo__title">{{ content.features_bankruptcy_title }}</h3>
+            <p class="feature-duo__text">{{ content.features_bankruptcy_desc }}</p>
+        </div>
+        <div class="feature-duo__card">
+            <div class="feature-duo__icon">📊</div>
+            <h3 class="feature-duo__title">{{ content.features_models_title }}</h3>
+            <p class="feature-duo__text">{{ content.features_models_desc }}</p>
+        </div>
+    </section>
+
+    <main>
+        <section class="features container reveal">
+            {% for feature in content.features %}
+            <div class="feature-card">
+                <h3>{{ feature.title }}</h3>
+                <p>{{ feature.text }}</p>
+            </div>
+            {% endfor %}
+        </section>
+
+        <section class="technology">
+        <div class="technology__content container">
+            <p>{{ content.technology }}</p>
+        </div>
+    </section>
+
+    <section class="section-block reveal">
+        <div class="container section-heading">
+            <h2 class="section-title">{{ content.for_whom_title }}</h2>
+            <p class="section-subtitle">{{ content.for_whom_subtitle }}</p>
+        </div>
+        <div class="container audience-grid">
+            {% for card in content.for_whom_cards %}
+            <div class="audience-card reveal" style="transition-delay: {{ loop.index0 * 80 }}ms;">
+                <span class="audience-badge">{{ content.for_whom_badges[loop.index0] }}</span>
+                <h3>{{ card.title }}</h3>
+                <p>{{ card.text }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="section-block reveal">
+        <div class="container">
+            <div class="section-heading">
+                <h2 class="section-title">{{ content.why_title }}</h2>
+            </div>
+            <div class="why-list">
+                {% for item in content.why_items %}
+                <div class="why-item reveal" style="transition-delay: {{ loop.index0 * 90 }}ms;">
+                    <div class="why-title">{{ item }}</div>
                 </div>
                 {% endfor %}
-            </section>
-
-            <section class="technology">
-                <div class="technology__content container">
-                    <p>{{ content.technology }}</p>
-                </div>
-            </section>
-        </main>
-
-        <footer class="footer">
-            <div class="container">
-                <div class="footer__divider"></div>
-                <p class="footer__text">{{ content.footer }}</p>
             </div>
-        </footer>
-    </div>
-</body>
-</html>
+        </div>
+    </section>
+
+    <section class="section-block reveal">
+        <div class="container section-heading">
+            <h2 class="section-title">{{ content.preview_title }}</h2>
+            <p class="section-subtitle">{{ content.preview_subtitle }}</p>
+        </div>
+        <div class="container preview-card reveal">
+            <div class="preview-top">
+                <div class="preview-value">23%</div>
+                <div class="preview-label">{{ content.preview_risk_label }}</div>
+                <div class="preview-chip">{{ content.preview_status }}</div>
+            </div>
+            <div class="preview-line"></div>
+            <div class="preview-body">
+                {% for line in content.preview_lines %}
+                <p>{{ line }}</p>
+                {% endfor %}
+            </div>
+            <div class="preview-disclaimer">{{ content.preview_disclaimer }}</div>
+        </div>
+    </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer__divider"></div>
+            <p class="footer__text">{{ content.footer }}</p>
+        </div>
+    </footer>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<main class="container account">
+    <div class="account__header">
+        <div>
+            <p class="hero__eyebrow">{{ content.eyebrow }}</p>
+            <h1>{{ content.title }}</h1>
+            <p class="helper-text">{{ content.helper }}</p>
+        </div>
+        <div class="account__actions">
+            <a class="cta" href="/form?lang={{ lang }}">{{ content.new_prediction }}</a>
+            {% if records %}
+            <form method="post" action="{{ url_for('account_history_clear') }}?lang={{ lang }}" onsubmit="return confirm({{ nav.confirm_clear_history|default('Действительно удалить всю историю?')|tojson }});">
+                <button type="submit" class="cta cta--ghost">{{ nav.clear_history }}</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if message %}
+    <div class="alert alert--success">{{ message }}</div>
+    {% endif %}
+
+    {% if records %}
+    <div class="table-wrapper">
+        <table class="data-table data-table--compact">
+            <thead>
+                <tr>
+                    <th>{{ content.date_col }}</th>
+                    <th>{{ content.result_col }}</th>
+                    <th>{{ content.details_col }}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in records %}
+                <tr>
+                    <td>{{ item.formatted_date }}</td>
+                    <td>
+                        <div class="result-line">{{ item.status_text }}</div>
+                        {% if item.summary_text %}
+                        <div class="helper-text">{{ item.summary_text }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.all_items %}
+                        <details class="details-block">
+                            <summary>
+                                {{ nav.show_all }}
+                                <span class="summary-caret">▾</span>
+                            </summary>
+                            <div class="details-grid">
+                                {% for badge in item.all_items %}
+                                <div class="details-item">
+                                    <span class="details-label">{{ badge.label }}</span>
+                                    <span class="details-value">{{ badge.value }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </details>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    <td class="actions-cell">
+                        <form method="post" action="{{ url_for('account_history_delete', prediction_id=item.record.id) }}?lang={{ lang }}" onsubmit="return confirm({{ nav.confirm_delete_record|default('Действительно удалить запись?')|tojson }});">
+                            <button type="submit" class="link-button">{{ nav.delete }}</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="helper-text">{{ content.empty }}</p>
+    {% endif %}
+</main>
+{% endblock %}
