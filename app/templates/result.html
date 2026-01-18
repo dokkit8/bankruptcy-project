@@ -6,7 +6,7 @@
         <a class="lang-link {% if lang == 'ru' %}lang-link--active{% endif %}" href="/result?lang=ru{% for key, value in form_data.items() %}{% if key != 'lang' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">RU</a>
         <a class="lang-link {% if lang == 'en' %}lang-link--active{% endif %}" href="/result?lang=en{% for key, value in form_data.items() %}{% if key != 'lang' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">EN</a>
     </div>
-    <div class="hero__content container">
+    <div class="hero__content container result-hero">
         <p class="hero__eyebrow">{{ content.eyebrow }}</p>
         <h1 class="hero__title">{{ content.hero_title }}</h1>
         <p class="hero__subtitle">{{ content.hero_subtitle }}</p>

@@ -7,14 +7,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=3" />
+    <link rel="stylesheet" href="/static/css/style.css?v=4" />
     {% block extra_head %}{% endblock %}
 </head>
 <body class="home">
     <div class="page">
         <header class="topbar">
             <div class="container topbar__inner">
-                <a href="{{ url_for('read_root') }}?lang={{ lang }}" class="brand-link">{{ nav.brand }}</a>
+                <a href="{{ url_for('read_root') }}?lang={{ lang }}" class="brand-link"><span class="brand-text">{{ nav.brand }}</span></a>
                 <nav class="topbar__nav">
                     <a href="{{ url_for('read_root') }}?lang={{ lang }}" class="nav-link">{{ nav.home }}</a>
                     <a href="{{ url_for('show_form') }}?lang={{ lang }}" class="nav-link">{{ nav.predict }}</a>
@@ -33,7 +33,7 @@
 
         {% block content %}{% endblock %}
     </div>
-    <script src="/static/js/app.js?v=1" defer></script>
+    <script src="/static/js/app.js?v=20260118_5" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

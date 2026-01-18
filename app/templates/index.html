@@ -12,7 +12,7 @@
                 <h1 class="hero__title">{{ content.hero_title }}</h1>
                 <p class="hero__subtitle">{{ content.hero_subtitle }}</p>
                 <div class="hero__actions">
-                    <a class="cta" href="/form?lang={{ lang }}">{{ content.cta }}</a>
+                    <a id="to-form-btn" class="cta hero__cta" href="/form">{{ content.cta }}</a>
                     {% if not user %}
                     <a class="cta cta--ghost" href="{{ url_for('login_page') }}?lang={{ lang }}&next={{ request.url.path | urlencode }}">{{ content.hero_cta_save_history }}</a>
                     {% else %}

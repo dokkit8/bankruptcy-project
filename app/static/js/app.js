@@ -1,24 +1,58 @@
-document.addEventListener("click", function (e) {
-  const btn = e.target.closest(".password-toggle");
-  if (!btn) return;
+console.log("APP.JS LOADED v=20260118-6");
 
-  const input = document.getElementById(btn.dataset.target);
-  if (!input) return;
-
-  if (input.type === "password") {
-    input.type = "text";
-    btn.textContent = "🙈";
-    btn.setAttribute("aria-label", "Скрыть пароль");
-  } else {
-    input.type = "password";
-    btn.textContent = "👁";
-    btn.setAttribute("aria-label", "Показать пароль");
-  }
-});
+const isSafari = (() => {
+  const ua = navigator.userAgent;
+  const isAppleWebKit = /AppleWebKit/.test(ua);
+  const isChrome = /Chrome|CriOS|Chromium/.test(ua);
+  const isFirefox = /Firefox|FxiOS/.test(ua);
+  return isAppleWebKit && !isChrome && !isFirefox;
+})();
+if (isSafari) {
+  document.documentElement.classList.add("is-safari");
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   console.log("validation script loaded");
   document.body.classList.add("js-enabled");
+  document.documentElement.classList.add("js-ready");
+  document.documentElement.classList.add("page-enter");
+  requestAnimationFrame(() => {
+    document.documentElement.classList.add("page-entered");
+    document.documentElement.classList.remove("page-enter");
+  });
+
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[href]");
+  if (!a) return;
+  const href = a.getAttribute("href") || "";
+  const isInternal = href.startsWith("/") && !href.startsWith("//");
+  if (!isInternal) return;
+  if (document.documentElement.classList.contains("is-safari")) {
+    document.documentElement.classList.add("no-blur");
+    return;
+  }
+  document.documentElement.classList.add("page-leave");
+}, true);
+
+  function initPasswordToggles() {
+    const toggles = document.querySelectorAll(".password-toggle");
+    toggles.forEach((btn) => {
+      const targetId = btn.dataset.target;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      btn.addEventListener("click", () => {
+        if (input.type === "password") {
+          input.type = "text";
+          btn.textContent = "🙈";
+          btn.setAttribute("aria-label", "Скрыть пароль");
+        } else {
+          input.type = "password";
+          btn.textContent = "👁";
+          btn.setAttribute("aria-label", "Показать пароль");
+        }
+      });
+    });
+  }
 
   function initNumericForm(formId) {
     const form = document.getElementById(formId);
@@ -303,17 +337,33 @@ function initWhatIf() {
 function initReveal() {
   const prefersReduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (prefersReduce) return;
-  const elements = document.querySelectorAll(".reveal");
-  const observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add("is-visible");
-          observer.unobserve(entry.target);
+  if (window.__revealInitDone) return;
+  window.__revealInitDone = true;
+  try {
+    if (!window.__revealObserver && "IntersectionObserver" in window) {
+      window.__revealObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+              window.__revealObserver.unobserve(entry.target);
+            }
+          });
+        },
+        { threshold: 0.15 }
+      );
+    }
+    const elements = document.querySelectorAll(".reveal");
+    if (window.__revealObserver) {
+      elements.forEach((el) => {
+        if (!el.classList.contains("is-visible")) {
+          window.__revealObserver.observe(el);
         }
       });
-    },
-    { threshold: 0.15 }
-  );
-  elements.forEach((el) => observer.observe(el));
+    } else {
+      elements.forEach((el) => el.classList.add("is-visible"));
+    }
+  } catch (_) {
+    document.querySelectorAll(".reveal").forEach((el) => el.classList.add("is-visible"));
+  }
 }

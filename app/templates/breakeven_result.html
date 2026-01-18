@@ -49,11 +49,52 @@
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 14px;
     padding: 18px;
+    display: flex;
+    justify-content: center;
+}
+.chart-card--split {
+    flex-direction: row;
+    gap: 18px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.chart-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+}
+.chart-info {
+    flex: 1 1 240px;
+    color: var(--white);
+}
+.chart-info h3 {
+    margin: 0;
+    color: var(--white);
+}
+.chart-info p {
+    margin: 6px 0 0;
+    font-size: 0.95rem;
+    color: var(--steel-light);
+}
+.chart-card .table-heading {
+    width: 100%;
 }
 .chart-wrap {
     position: relative;
-    height: 360px;
+    width: 100%;
+    max-width: 980px;
+    aspect-ratio: 16 / 9;
     margin-top: 12px;
+}
+.chart-wrap canvas {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+}
+@media (max-width: 768px) {
+    .chart-wrap { aspect-ratio: 4 / 3; max-width: 100%; }
 }
 .scenario-table {
     width: 100%;
@@ -92,6 +133,12 @@
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
 }
+.scenario-table th { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+@media (max-width: 767px) {
+    .table-card { overflow-x: auto; height: auto; min-height: unset; }
+    .table-card table { width: max-content; min-width: 100%; }
+    .scenario-table th, .scenario-table td { padding: 10px 8px; }
+}
 </style>
 {% endblock %}
 
@@ -127,10 +174,10 @@
     {% endif %}
 
     <div class="chart-card">
-        <div class="table-heading" style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+        <div class="table-heading" style="display:flex;align-items:flex-start;gap:8px;justify-content:flex-start;">
             <div>
-                <h3 style="margin:0;color:var(--white);">{{ copy.chart_title }}</h3>
-                <p class="hero__subtitle" style="margin:4px 0 0;font-size:0.95rem;">{{ copy.hero_subtitle }}</p>
+                <h3 style="margin:0;color:var(--white); text-align:left;">{{ copy.chart_title }}</h3>
+                <p class="hero__subtitle" style="margin:4px 0 0;font-size:0.95rem; text-align:left;">{{ copy.hero_subtitle }}</p>
             </div>
         </div>
         <div class="chart-wrap">
@@ -139,7 +186,7 @@
     </div>
 
     <div class="table-card">
-        <h3 style="margin:0 0 8px;color:var(--white);">{{ copy.table_title }}</h3>
+        <h3 style="margin:0 0 8px;color:var(--white); text-align:left;">{{ copy.table_title }}</h3>
         <table class="scenario-table">
             <thead>
                 <tr>
