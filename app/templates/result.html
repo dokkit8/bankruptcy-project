@@ -1,18 +1,30 @@
 {% extends "layout.html" %}
 
+
 {% block content %}
 <header class="hero hero--compact">
     <div class="language-switch">
         <a class="lang-link {% if lang == 'ru' %}lang-link--active{% endif %}" href="/result?lang=ru{% for key, value in form_data.items() %}{% if key != 'lang' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">RU</a>
         <a class="lang-link {% if lang == 'en' %}lang-link--active{% endif %}" href="/result?lang=en{% for key, value in form_data.items() %}{% if key != 'lang' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">EN</a>
     </div>
-    <div class="hero__content container result-hero">
-        <p class="hero__eyebrow">{{ content.eyebrow }}</p>
-        <h1 class="hero__title">{{ content.hero_title }}</h1>
-        <p class="hero__subtitle">{{ content.hero_subtitle }}</p>
-        {% if not user %}
-        <a class="cta" href="{{ url_for('login_page') }}?lang={{ lang }}&next={{ next_url | urlencode }}">{{ nav.save_history }}</a>
-        {% endif %}
+    <div class="hero__content container result-hero pred-hero">
+        <div class="pred-hero__head">
+            <div class="pred-hero__text">
+                <p class="hero__eyebrow">{{ content.eyebrow }}</p>
+                <h1 class="pred-hero__title hero__title">
+                    <span>Финансовое</span>
+                    <span>здоровье компании</span>
+                </h1>
+                <p class="pred-hero__subtitle hero__subtitle">
+                    Система сравнила показатели компании с медианными значениями отрасли и выделила сильные стороны и риски.
+                </p>
+                {% if not user %}
+                <div class="pred-hero__actions">
+                    <a class="cta" href="{{ url_for('login_page') }}?lang={{ lang }}&next={{ next_url | urlencode }}">{{ nav.save_history }}</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
     <div class="hero__background">
         <div class="glow glow--1"></div>
@@ -22,84 +34,321 @@
 
 <main>
     <section class="result-section container">
-        <div class="result-card">
-            <p class="result-label">{{ content.result_label }}</p>
-            <p class="result-value" id="result-probability" style="color: {{ risk_color }};">{{ probability }}%</p>
-            <div class="result-chip" id="result-chip" style="background: {{ risk_color }}22; color: {{ risk_color }};">
-                {{ risk_label }}
-            </div>
-        </div>
-
-        <div class="interpretation card">
-            <h3>{{ content.interpretation_title }}</h3>
-            <p>{{ interpretation }}</p>
-        </div>
-
-        <div class="table-wrapper card">
-            <div class="table-heading">
-                <h3>{{ content.table_title }}</h3>
-                <p class="helper-text">{{ content.table_helper }}</p>
-            </div>
-            <table class="data-table data-table--compact">
-                <thead>
-                    <tr>
-                        <th>{{ content.criterion_col }}</th>
-                        <th>{{ content.value_col }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in rows %}
-                    <tr>
-                        <td>{{ row.name }}</td>
-                        <td>{{ row.value }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <div
-            class="card whatif-card"
-            id="whatif-panel"
-            data-endpoint="/api/bankruptcy/predict?lang={{ lang }}"
-            data-baseline='{{ whatif_baseline | tojson }}'
-            data-baseline-result='{{ whatif_baseline_result | tojson }}'
-            data-recalc-msg="{{ content.whatif_recalc }}"
-            data-ready-msg="{{ content.whatif_ready }}"
-            data-error-msg="{{ content.whatif_error }}"
-            data-reset-one-tip="{{ content.whatif_reset_one_tip }}"
-        >
-            <div class="table-heading">
-                <div>
-                    <h3>{{ content.whatif_title }}</h3>
-                    <p class="helper-text">{{ content.whatif_desc }}</p>
-                </div>
-            </div>
-            <div class="whatif-current">
-                <div>
-                    <span class="helper-text">{{ content.result_label }}</span>
-                    <div class="whatif-risk">
-                        <span id="whatif-risk-value">{{ probability }}%</span>
-                        <span class="result-chip" id="whatif-chip" style="background: {{ risk_color }}22; color: {{ risk_color }};">{{ risk_label }}</span>
+        <div class="card result-top-grid" style="padding:28px; border-radius:24px;">
+            <div>
+                <p class="result-label" style="margin-bottom:10px;">Индекс финансового здоровья</p>
+                <div style="display:flex; align-items:end; gap:14px; margin-bottom:12px; flex-wrap:wrap;">
+                    <div class="result-value" id="result-health" style="color: {{ risk_color }}; line-height:1;">
+                        {{ health_score if health_score is defined else probability }}
+                    </div>
+                    <div class="result-chip" id="result-chip" style="background: {{ risk_color }}22; color: {{ risk_color }};">
+                        {{ risk_label }}
                     </div>
                 </div>
-                <div id="whatif-status" class="helper-text">{{ content.whatif_ready }}</div>
-            </div>
-            <div class="whatif-list">
-                {% for item in whatif_fields %}
-                <div class="whatif-row" data-key="{{ item.key }}">
-                    <div class="whatif-label">{{ item.label }}</div>
-                    <div class="whatif-controls">
-                        <input type="range" min="0" max="10" step="0.1" value="{{ item.value }}" class="whatif-slider whatif-range">
-                        <input type="number" min="0" max="10" step="0.1" value="{{ item.value }}" class="whatif-input whatif-number">
-                        <button type="button" class="whatif-reset" title="{{ content.whatif_reset_one_tip }}">{{ content.whatif_reset_one }}</button>
+                <p class="helper-text" style="font-size:15px; max-width:640px; margin-bottom:18px;">
+                    Чем выше значение, тем устойчивее финансовый профиль компании относительно отрасли.
+                </p>
+
+                <div class="result-tags">
+<span class="result-tag result-tag--good">🟢 лучше отрасли</span>
+<span class="result-tag result-tag--mid">🟡 близко к отрасли</span>
+<span class="result-tag result-tag--bad">🔴 хуже отрасли</span>
+                </div>
+
+                <div class="result-meta-grid">
+                    <div class="metric-value-box">
+                        <div class="metric-label">Компания</div>
+                        <div class="metric-number">
+                        ООО
+                        </div>
                     </div>
-                    <div class="field-error-text whatif-error" style="display:none;"></div>
+                    <div class="metric-value-box">
+                        <div class="metric-label">Период</div>
+                        <div class="metric-number">{{ analysis_company.period if analysis_company is defined else '—' }}</div>
+                    </div>
+                    <div class="metric-value-box">
+                        <div class="metric-label">Отрасль</div>
+                        <div class="metric-number">
+                        {{ analysis_company.industry if analysis_company is defined and analysis_company.industry else (analysis_company.okved2_name if analysis_company is defined and analysis_company.okved2_name else (analysis_company.okved2 if analysis_company is defined else '—')) }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="summary-box">
+                <h3 style="margin:0 0 12px 0; font-size:20px;">Что это значит</h3>
+                <p class="helper-text" style="margin-bottom:14px;">
+                    Мы сравниваем ключевые финансовые метрики компании с медианными значениями компаний из той же отрасли.
+                </p>
+                <div class="strength-list">
+                    <div class="metric-value-box">🟢 Сильные метрики показывают, где компания выглядит лучше рынка.</div>
+                    <div class="metric-value-box">🔴 Риски показывают, какие зоны отстают от отрасли.</div>
+                    <div class="metric-value-box">🟡 Нейтральные показатели находятся рядом с типичным уровнем отрасли.</div>
+                </div>
+            </div>
+        </div>
+
+<div class="result-modern-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:22px; margin-top:22px;">
+{% if key_risk %}
+
+<div class="card" style="padding:24px; border-radius:22px; border:1px solid rgba(255,107,107,0.35); background:rgba(255,107,107,0.06);">
+
+<h3 style="margin-top:0; margin-bottom:8px;">⚠ Ключевой риск компании</h3>
+
+<p class="helper-text" style="margin-bottom:14px;">
+Главная зона отклонения от отраслевых показателей.
+</p>
+
+<div class="risk-item" style="background:rgba(255,107,107,0.12);">
+
+<div style="font-weight:700; font-size:16px; margin-bottom:6px; color:#c44e4e;">
+{{ key_risk.name }}
+</div>
+
+<div class="helper-text">
+Показатель заметно хуже медианного значения отрасли.
+</div>
+
+</div>
+
+</div>
+
+
+
+{% if risks %}
+
+<div class="card" style="padding:24px; border-radius:22px; margin-top:18px; border:1px solid rgba(68,196,161,0.25); background:rgba(68,196,161,0.06);">
+
+<h3 style="margin-top:0; margin-bottom:8px;">Слабые стороны и рекомендации</h3>
+
+<p class="helper-text" style="margin-bottom:18px;">
+Показатели, по которым компания отстаёт от отрасли, и рекомендации по их улучшению.
+</p>
+
+                <div class="strength-list">
+{% set filtered_risks = (risks | rejectattr('name','equalto', key_risk.name) | list) if key_risk else risks %}
+{% set recommendation_risks = filtered_risks[:3] if filtered_risks else ([key_risk] if key_risk else []) %}
+
+{% if recommendation_risks %}
+{% for row in recommendation_risks %}
+<div class="strength-item" style="background:rgba(247,194,72,0.12); border:1px solid rgba(247,194,72,0.25);">
+
+<div style="font-weight:700; margin-bottom:6px; color:#d9822b;">
+{{ loop.index }}. 🔴 {{ row.name }}
+</div>
+<div style="font-size:13px; font-weight:600; margin-bottom:4px; color:#b07a1f;">Рекомендация:</div>
+<div class="helper-text">
+{% if "марж" in row.name|lower %}
+Повышение маржинальности (снижение себестоимости или рост цен) может существенно улучшить финансовый профиль.
+{% elif "долг" in row.name|lower %}
+Снижение долговой нагрузки или увеличение собственного капитала повысит устойчивость компании.
+{% elif "ликвид" in row.name|lower %}
+Увеличение ликвидности (денежных резервов и оборотных активов) снизит финансовые риски.
+{% elif "рентаб" in row.name|lower %}
+Рост операционной эффективности и прибыльности усилит позиции компании относительно отрасли.
+{% else %}
+Улучшение этого показателя приблизит финансовый профиль компании к отраслевым значениям.
+{% endif %}
+</div>
+
+</div>
+{% endfor %}
+
+{% else %}
+
+<div class="metric-value-box">
+    <div class="helper-text">Существенных слабых показателей относительно отрасли не обнаружено.</div>
+</div>
+
+{% endif %}
+
+</div>
+
+</div>
+
+{% endif %}
+
+{% endif %}
+
+        </div>
+        <div class="result-two-col" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:22px; margin-top:22px;">
+            <div class="card" style="padding:24px; border-radius:22px; min-height:100%;">
+                <h3 style="margin-top:0; margin-bottom:8px;">Сильные стороны</h3>
+                <p class="helper-text" style="margin-bottom:18px;">Показатели, по которым компания выглядит лучше типичной компании в отрасли.</p>
+
+                <div class="strength-list">
+                    {% if strengths %}
+                        {% for row in strengths %}
+                        <div class="strength-item">
+                            <div style="font-weight:700; margin-bottom:6px; color:#2d8f72;">🟢 {{ row.name }}</div>
+                            <div class="helper-text">Показатель лучше отраслевой медианы.</div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div style="padding:16px 18px; border-radius:18px; background:rgba(247, 194, 72, 0.10); border:1px solid rgba(247, 194, 72, 0.22);">
+                            <div style="font-weight:700; margin-bottom:6px; color:#a47b13;">🟡 Выраженных сильных сторон не выявлено</div>
+                            <div class="helper-text">Показатели компании в основном близки к отраслевым значениям.</div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card" style="padding:24px; border-radius:22px; min-height:100%;">
+                <h3 style="margin-top:0; margin-bottom:8px;">Риски и зоны внимания</h3>
+                <p class="helper-text" style="margin-bottom:18px;">Показатели, которые требуют внимания, потому что компания выглядит слабее отрасли.</p>
+
+                <div class="risk-list">
+{% set visible_risks = (risks | rejectattr('name','equalto', key_risk.name) | list) if key_risk else risks %}
+
+{% if visible_risks %}
+{% for row in visible_risks[:3] %}
+<div class="risk-item">
+    <div style="font-weight:700; margin-bottom:6px; color:#c44e4e;">🔴 {{ row.name }}</div>
+    <div class="helper-text">Показатель хуже отраслевой медианы.</div>
+</div>
+{% endfor %}
+
+{% else %}
+
+<div style="padding:16px 18px; border-radius:18px; background:rgba(68, 196, 161, 0.10); border:1px solid rgba(68, 196, 161, 0.22);">
+    <div class="helper-text">Дополнительных слабых показателей относительно отрасли не обнаружено.</div>
+</div>
+
+{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% set good_count = strengths | length %}
+        {% set bad_count = risks | length %}
+
+        <div class="card" style="padding:24px; border-radius:22px;">
+
+        <h3 style="margin-top:0; margin-bottom:8px;">Краткое заключение</h3>
+        <p class="helper-text" style="margin-bottom:16px;">Обобщённая оценка финансового состояния компании.</p>
+
+        <div class="summary-box">
+
+        {% if good_count > bad_count %}
+        Компания демонстрирует устойчивое финансовое состояние и по ряду ключевых показателей выглядит лучше медианных значений компаний своей отрасли.
+
+        {% elif bad_count > good_count %}
+        Финансовый профиль компании содержит несколько показателей ниже отраслевых значений. Это может указывать на повышенные финансовые риски относительно рынка.
+
+        {% else %}
+        Финансовые показатели компании в целом находятся близко к типичным значениям отрасли и не демонстрируют существенных отклонений.
+        {% endif %}
+
+        </div>
+        </div>
+
+        <div class="card" style="padding:24px; border-radius:22px;">
+            <h3 style="margin-top:0; margin-bottom:8px;">Ключевые показатели</h3>
+            <p class="helper-text" style="margin-bottom:18px;">Сравнение компании с медианными значениями отрасли по каждой метрике.</p>
+
+            <div class="metric-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px;">
+                {% for row in rows %}
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-title">{{ row.name }}</div>
+                        {% if row.status == 'good' %}
+                            <span class="metric-status-good">🟢 лучше</span>
+                        {% elif row.status == 'bad' %}
+                            <span class="metric-status-bad">🔴 хуже</span>
+                        {% else %}
+                            <span class="metric-status-mid">🟡 близко</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="metric-values">
+                        <div class="metric-value-box">
+                            <div class="helper-text" style="margin-bottom:4px;">Компания</div>
+                            <div class="metric-number">{{ "%.3f"|format(row.value) }}</div>
+                        </div>
+                        <div class="metric-value-box">
+                            <div class="helper-text" style="margin-bottom:4px;">Отрасль</div>
+                            <div class="metric-number">{{ "%.3f"|format(row.median) }}</div>
+                        </div>
+                    </div>
+
+                    {% if row.ratio is defined and row.ratio is not none %}
+
+                    {% set pct = ((row.ratio - 1) * 100) %}
+
+                    <div style="margin-top:10px; font-size:14px; font-weight:600;">
+
+                    {% if pct > 5 %}
+                    <span style="color:#2d8f72;">▲ +{{ "%.1f"|format(pct) }}% к отрасли</span>
+
+                    {% elif pct < -5 %}
+                    <span style="color:#c44e4e;">▼ {{ "%.1f"|format(pct) }}% ниже отрасли</span>
+
+                    {% else %}
+                    <span style="color:#caa23b;">≈ близко к отрасли</span>
+                    {% endif %}
+
+                    </div>
+
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
-            <div class="form-actions">
-                <button type="button" class="cta cta--ghost" id="whatif-reset-all">{{ content.whatif_reset_all }}</button>
+        </div>
+
+        <div class="chart-grid" style="display:grid; grid-template-columns:1fr; gap:22px; margin-top:22px;">
+        <div class="card chart-card">
+
+            <h3 style="margin-top:0; margin-bottom:8px;">Сравнение показателей</h3>
+            <p class="helper-text" style="margin-bottom:18px;">
+            Сравнение значений компании и медианных значений отрасли.
+            </p>
+
+            <div class="chart-container" style="height:460px;">
+            <canvas id="comparisonBarChart"></canvas>
+            </div>
+
+        </div>
+
+        <div class="card chart-card">
+
+<h3 style="margin-top:0; margin-bottom:8px;">Финансовый профиль компании</h3>
+<p class="helper-text" style="margin-bottom:18px;">
+Общий профиль компании по ключевым финансовым метрикам относительно отрасли.
+</p>
+
+<div class="chart-container" style="height:420px;">
+<canvas id="radarChart"></canvas>
+</div>
+
+</div>
+
+            <div class="card chart-card">
+
+            <h3 style="margin-top:0; margin-bottom:8px;">Динамика ключевых показателей</h3>
+            <p class="helper-text" style="margin-bottom:18px;">
+            Изменение финансовых показателей компании по годам.
+            </p>
+
+            <div class="chart-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px;">
+
+            <div class="chart-container" style="height:300px; padding-top:8px;">
+            <canvas id="revenueChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height:300px; padding-top:8px;">
+            <canvas id="profitChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height:300px; padding-top:8px;">
+            <canvas id="marginChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height:300px; padding-top:8px;">
+            <canvas id="debtChart"></canvas>
+            </div>
+
+            </div>
+
             </div>
         </div>
 
@@ -109,4 +358,168 @@
         </div>
     </section>
 </main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+
+const labels = {{ rows | map(attribute='name') | list | tojson }};
+const ratioValues = {{ rows | map(attribute='ratio') | list | tojson }};
+
+// industry baseline = 1 (median level)
+const industryBaseline = labels.map(() => 1);
+
+function withSafeValues(arr) {
+    return (arr || []).map(v => (v === null || v === undefined ? null : Number(v)));
+}
+
+function getBarColors(values) {
+    return values.map(v => {
+        if (v === null || v === undefined) return '#999';
+        if (v > 1.1) return '#44c4a1';   // green
+        if (v < 0.9) return '#ff6b6b';   // red
+        return '#f7c248';                // yellow
+    });
+}
+
+const barCtx = document.getElementById('comparisonBarChart');
+
+if (barCtx) {
+new Chart(barCtx, {
+
+    type: 'bar',
+
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Компания / отрасль',
+                data: withSafeValues(ratioValues),
+                backgroundColor: getBarColors(ratioValues),
+                borderRadius: 6
+            },
+            {
+                label: 'Отрасль (базовый уровень)',
+                data: industryBaseline
+            }
+        ]
+    },
+
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top' }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 2,
+                ticks: {
+                    callback: function(value) {
+                        if (value === 1) return '1 (отрасль)';
+                        return value.toFixed(2);
+                    }
+                }
+            }
+        }
+    }
+
+});
+}
+
+// Radar chart for financial profile
+const radarCtx = document.getElementById('radarChart');
+
+if (radarCtx) {
+new Chart(radarCtx, {
+
+    type: 'radar',
+
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Компания / отрасль',
+                data: withSafeValues(ratioValues),
+                fill: true,
+                backgroundColor: 'rgba(68,196,161,0.25)',
+                borderColor: '#44c4a1',
+                pointBackgroundColor: '#44c4a1',
+                borderWidth: 2
+            },
+            {
+                label: 'Отрасль (уровень = 1)',
+                data: industryBaseline,
+                fill: false,
+                borderColor: '#999',
+                pointBackgroundColor: '#999',
+                borderDash: [6,6]
+            }
+        ]
+    },
+
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top' }
+        },
+        scales: {
+            r: {
+                beginAtZero: true,
+                suggestedMax: 2,
+                grid: { color: 'rgba(255,255,255,0.08)' }
+            }
+        }
+    }
+
+});
+}
+
+const history = {{ company_history | default({}, true) | tojson }};
+
+if (history) {
+
+const years = history.labels;
+
+function buildLineChart(canvasId, label, data) {
+
+const ctx = document.getElementById(canvasId);
+
+if (!ctx) return;
+
+new Chart(ctx, {
+    type: 'line',
+
+    data: {
+        labels: years,
+        datasets: [{
+            label: label,
+            data: withSafeValues(data),
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 3
+        }]
+    },
+
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top' }
+        }
+    }
+
+});
+
+}
+
+buildLineChart('revenueChart', 'Выручка', history.revenue);
+buildLineChart('profitChart', 'Прибыль', history.profit);
+buildLineChart('marginChart', 'Маржа', history.margin);
+buildLineChart('debtChart', 'Долговая нагрузка', history.debt_ratio);
+
+}
+
+</script>
 {% endblock %}

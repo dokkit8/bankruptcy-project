@@ -1,8 +1,16 @@
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from datetime import timedelta, datetime, timezone
 import json
 import math
 import hashlib
+
+from pathlib import Path
+try:
+    import requests
+except ImportError:
+    raise RuntimeError(
+        "The 'requests' library is not installed. Install it with: pip install requests"
+    )
 
 from pandas import DataFrame
 from joblib import load
@@ -20,6 +28,7 @@ from app.deps import get_db, get_current_user, get_optional_user
 from app.models import User, Prediction
 from app.schemas import UserCreate, UserLogin
 from app.security import create_access_token, hash_password, verify_password
+from app.parser.json_parser import parse_company_year_json
 
 app = FastAPI(title="Система прогнозирования банкротства")
 
@@ -31,11 +40,480 @@ templates = Jinja2Templates(directory="app/templates")
 
 settings = get_settings()
 
+BASE_DIR = Path(__file__).resolve().parent
+
+# primary location (parser dataset folder)
+DATA_DIR = BASE_DIR / "parser" / "data"
+NORM_TABLE_PATH = DATA_DIR / "norm_table.csv"
+
+# fallback locations (when parser/dataset folder was copied differently)
+ALT_NORM_PATHS = [
+    BASE_DIR.parent / "data" / "norm_table.csv",          # project_root/data
+    BASE_DIR / "parser" / "data" / "norm_table.csv",     # app/parser/data
+    BASE_DIR.parent / "parser" / "data" / "norm_table.csv",  # project_root/parser/data
+]
+
+SEARCH_URL = "https://bo.nalog.gov.ru/advanced-search/organizations/search"
+BFO_REFERER = "https://bo.nalog.gov.ru/"
+
+analysis_norms: Optional[DataFrame] = None
+
+
+def load_analysis_sources() -> Optional[DataFrame]:
+    global analysis_norms
+
+    if analysis_norms is not None:
+        return analysis_norms
+
+    import pandas as pd
+
+    debug_messages = []
+    paths_to_try = [NORM_TABLE_PATH] + ALT_NORM_PATHS
+
+    for path in paths_to_try:
+        path = Path(path)
+        debug_messages.append(f"try path={path} exists={path.exists()}")
+        if not path.exists():
+            continue
+
+        for enc in ("utf-8-sig", "utf-8", "cp1251"):
+            try:
+                # try both common separators because many Russian CSV exports use ';'
+                try:
+                    df = pd.read_csv(path, encoding=enc, sep=";")
+                    if len(df.columns) == 1:
+                        # fallback if separator actually comma
+                        df = pd.read_csv(path, encoding=enc)
+                except Exception:
+                    df = pd.read_csv(path, encoding=enc)
+                debug_messages.append(f"loaded path={path} encoding={enc} columns={list(df.columns)}")
+
+                required_cols = {"level", "period", "key"}
+                if not required_cols.issubset(set(df.columns)):
+                    debug_messages.append(
+                        f"path={path} encoding={enc} missing required columns {required_cols - set(df.columns)}"
+                    )
+                    continue
+
+                analysis_norms = df
+                print(f"Loaded norm table from: {path} (encoding={enc})")
+                return analysis_norms
+            except Exception as e:
+                debug_messages.append(f"failed path={path} encoding={enc} error={repr(e)}")
+
+    load_analysis_sources.last_error = "\n".join(debug_messages)
+    print("norm_table.csv not found or could not be parsed")
+    print(load_analysis_sources.last_error)
+    analysis_norms = None
+    return None 
+
+
+def normalize_inn(value: Optional[str]) -> str:
+    if value is None:
+        return ""
+    return "".join(ch for ch in str(value) if ch.isdigit())
+
+
+
+def safe_float(value):
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def safe_div(a, b):
+    a = safe_float(a)
+    b = safe_float(b)
+    if a is None or b is None or b == 0:
+        return None
+    return a / b
+
+
+def robust_z(value, median, mad):
+    value = safe_float(value)
+    median = safe_float(median)
+    mad = safe_float(mad)
+    if value is None or median is None or mad is None:
+        return None
+    if mad == 0:
+        return 0.0
+    return (value - median) / mad
+
+
+def okved_to_section(okved2: str) -> Optional[str]:
+    try:
+        n = int(str(okved2)[:2])
+    except Exception:
+        return None
+
+    if 1 <= n <= 3:
+        return "A"
+    if 5 <= n <= 9:
+        return "B"
+    if 10 <= n <= 33:
+        return "C"
+    if 35 <= n <= 39:
+        return "D"
+    if 41 <= n <= 43:
+        return "F"
+    if 45 <= n <= 47:
+        return "G"
+    if 49 <= n <= 53:
+        return "H"
+    if 55 <= n <= 56:
+        return "I"
+    if 58 <= n <= 63:
+        return "J"
+    if 64 <= n <= 66:
+        return "K"
+    if n == 68:
+        return "L"
+    if 69 <= n <= 75:
+        return "M"
+    if 77 <= n <= 82:
+        return "N"
+    if n == 84:
+        return "O"
+    if n == 85:
+        return "P"
+    if 86 <= n <= 88:
+        return "Q"
+    if 90 <= n <= 93:
+        return "R"
+    if 94 <= n <= 96:
+        return "S"
+    if 97 <= n <= 98:
+        return "T"
+    if n == 99:
+        return "U"
+    return None
+
+# Human readable OKVED section names
+OKVED_SECTION_MAP = {
+    "A": "Сельское, лесное хозяйство, охота, рыболовство",
+    "B": "Добыча полезных ископаемых",
+    "C": "Обрабатывающие производства",
+    "D": "Электроэнергия, газ, пар",
+    "E": "Водоснабжение и утилизация отходов",
+    "F": "Строительство",
+    "G": "Оптовая и розничная торговля",
+    "H": "Транспортировка и хранение",
+    "I": "Гостиницы и общественное питание",
+    "J": "Информация и связь",
+    "K": "Финансовая и страховая деятельность",
+    "L": "Операции с недвижимостью",
+    "M": "Профессиональная, научная и техническая деятельность",
+    "N": "Административная деятельность",
+    "O": "Госуправление и обеспечение военной безопасности",
+    "P": "Образование",
+    "Q": "Здравоохранение и социальные услуги",
+    "R": "Культура, спорт, досуг",
+    "S": "Прочие услуги",
+    "T": "Домашние хозяйства",
+    "U": "Экстерриториальные организации",
+}
+
+
+def find_norm_row(norms_df: DataFrame, period: int, okved2: str, section: str):
+    rows = norms_df[
+        (norms_df["level"] == "okved2")
+        & (norms_df["period"] == period)
+        & (norms_df["key"].astype(str) == str(okved2))
+    ]
+    if len(rows) > 0:
+        return rows.iloc[0], "okved2"
+
+    rows = norms_df[
+        (norms_df["level"] == "section")
+        & (norms_df["period"] == period)
+        & (norms_df["key"].astype(str) == str(section))
+    ]
+    if len(rows) > 0:
+        return rows.iloc[0], "section"
+
+    rows = norms_df[
+        (norms_df["level"] == "period")
+        & (norms_df["period"] == period)
+    ]
+    if len(rows) > 0:
+        return rows.iloc[0], "period"
+
+    return None, None
+
+
+def make_bfo_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0",
+        "Referer": BFO_REFERER,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+    })
+    return session
+
+
+def request_json(session: requests.Session, url: str, params=None):
+    r = session.get(url, params=params, timeout=30)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json()
+
+
+def extract_search_items(payload):
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ["items", "content", "results", "data"]:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def search_company_by_inn(session: requests.Session, inn: str):
+    payload = request_json(session, SEARCH_URL, params={"query": inn, "page": 0, "size": 20})
+    items = extract_search_items(payload)
+    if not items:
+        raise HTTPException(status_code=404, detail="ИНН не найден или компания отсутствует в БФО")
+
+    inn_norm = normalize_inn(inn)
+    best = None
+    for item in items:
+        item_inn = normalize_inn(item.get("inn"))
+        if item_inn == inn_norm:
+            best = item
+            break
+
+    if best is None:
+        best = items[0]
+
+    company_id = best.get("id") or best.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=404, detail="Не удалось определить company_id по ИНН")
+
+    return int(company_id), best
+
+
+def fetch_company_metrics_by_inn(inn: str):
+    session = make_bfo_session()
+    try:
+        session.get(BFO_REFERER, timeout=30)
+    except Exception:
+        pass
+
+    company_id, org_info = search_company_by_inn(session, inn)
+
+    periods_to_try = [2024, 2023, 2022, 2021]
+
+    parsed = None
+    history = []
+
+    for period in periods_to_try:
+        try:
+            data = parse_company_year_json(session, company_id=company_id, period=period)
+
+            if data is None:
+                continue
+
+            revenue = safe_float(data.get("revenue_t"))
+            profit = safe_float(data.get("net_profit_t"))
+            equity = safe_float(data.get("equity_t"))
+            debt = safe_float(data.get("debt_t"))
+            inventory = safe_float(data.get("inventory_t"))
+
+            margin_year = safe_div(profit, revenue)
+            debt_ratio_year = safe_div(debt, equity)
+            inv_turnover_year = safe_div(revenue, inventory)
+
+            if revenue is not None:
+                history.append({
+                    "year": period,
+                    "revenue": revenue,
+                    "profit": profit,
+                    "margin": margin_year,
+                    "debt_ratio": debt_ratio_year,
+                    "inv_turnover": inv_turnover_year
+                })
+
+            if parsed is None:
+                parsed = data
+
+        except Exception:
+            continue
+
+    if parsed is None:
+        raise HTTPException(status_code=404, detail="По данному ИНН не удалось получить финансовую отчетность")
+
+    period = int(parsed.get("period") or periods_to_try[0])
+    okved2 = str(parsed.get("okved2") or "")
+    section = okved_to_section(okved2)
+
+    margin = safe_div(parsed.get("net_profit_t"), parsed.get("revenue_t"))
+    debt_ratio = safe_div(parsed.get("debt_t"), parsed.get("equity_t"))
+    inv_turnover = safe_div(parsed.get("revenue_t"), parsed.get("inventory_t"))
+
+    rev_t = safe_float(parsed.get("revenue_t"))
+    rev_t_1 = safe_float(parsed.get("revenue_t_1"))
+
+    growth_rev = None
+    if rev_t is not None and rev_t_1 not in (None, 0):
+        growth_rev = (rev_t - rev_t_1) / rev_t_1
+
+    history_sorted = sorted(history, key=lambda x: x["year"])
+
+    return {
+        "company_id": company_id,
+        "inn": normalize_inn(inn),
+        "period": period,
+        "okved2": okved2,
+        "okved_section": section,
+        "okved_section_name": OKVED_SECTION_MAP.get(section),
+        "industry": OKVED_SECTION_MAP.get(section) or "Неизвестная отрасль",
+        "region": org_info.get("region"),
+        "margin": margin,
+        "debt_ratio": debt_ratio,
+        "inv_turnover": inv_turnover,
+        "growth_rev": growth_rev,
+        "history": history_sorted,
+    }
+
+
+def analyze_company_by_inn(inn: str):
+    norms_df = load_analysis_sources()
+    if norms_df is None:
+        debug_info = getattr(load_analysis_sources, "last_error", "no debug info")
+        raise HTTPException(status_code=500, detail=f"norm_table.csv not loaded\n{debug_info}")
+
+    inn_norm = normalize_inn(inn)
+    if not inn_norm:
+        raise HTTPException(status_code=400, detail="Введите корректный ИНН")
+
+    company_metrics = fetch_company_metrics_by_inn(inn_norm)
+
+    period = int(company_metrics["period"])
+    okved2 = str(company_metrics["okved2"])
+    section = str(company_metrics["okved_section"] or "")
+    norm_row, norm_level = find_norm_row(norms_df, period, okved2, section)
+    if norm_row is None:
+        raise HTTPException(status_code=500, detail="Не удалось найти отраслевые нормы")
+
+    company_metrics["z_margin"] = robust_z(company_metrics["margin"], norm_row.get("median_margin"), norm_row.get("mad_margin"))
+    company_metrics["z_debt_ratio"] = robust_z(company_metrics["debt_ratio"], norm_row.get("median_debt_ratio"), norm_row.get("mad_debt_ratio"))
+    company_metrics["z_inv_turnover"] = robust_z(company_metrics["inv_turnover"], norm_row.get("median_inv_turnover"), norm_row.get("mad_inv_turnover"))
+    company_metrics["z_growth"] = robust_z(company_metrics["growth_rev"], norm_row.get("median_growth"), norm_row.get("mad_growth"))
+
+    comparison_rows = [
+        {
+            "name": "Маржа",
+            "value": company_metrics["margin"],
+            "median": safe_float(norm_row.get("median_margin")),
+            "ratio": safe_div(company_metrics["margin"], safe_float(norm_row.get("median_margin"))),
+            "z": company_metrics["z_margin"],
+            "status": None,
+        },
+        {
+            "name": "Долговая нагрузка",
+            "value": company_metrics["debt_ratio"],
+            "median": safe_float(norm_row.get("median_debt_ratio")),
+            "ratio": safe_div(company_metrics["debt_ratio"], safe_float(norm_row.get("median_debt_ratio"))),
+            "z": company_metrics["z_debt_ratio"],
+            "status": None,
+        },
+        {
+            "name": "Оборачиваемость запасов",
+            "value": company_metrics["inv_turnover"],
+            "median": safe_float(norm_row.get("median_inv_turnover")),
+            "ratio": safe_div(company_metrics["inv_turnover"], safe_float(norm_row.get("median_inv_turnover"))),
+            "z": company_metrics["z_inv_turnover"],
+            "status": None,
+        },
+        {
+            "name": "Рост выручки",
+            "value": company_metrics["growth_rev"],
+            "median": safe_float(norm_row.get("median_growth")),
+            "ratio": safe_div(company_metrics["growth_rev"], safe_float(norm_row.get("median_growth"))),
+            "z": company_metrics["z_growth"],
+            "status": None,
+        },
+    ]
+
+    strengths = []
+    risks = []
+    neutral = []
+
+    for row in comparison_rows:
+        z = row.get("z")
+
+        if z is None:
+            row["status"] = "mid"
+            neutral.append(row)
+            continue
+
+        if z > 0.5:
+            row["status"] = "good"
+            strengths.append(row)
+        elif z < -0.5:
+            row["status"] = "bad"
+            risks.append(row)
+        else:
+            row["status"] = "mid"
+            neutral.append(row)
+
+    # determine the main risk metric (largest negative deviation)
+    key_risk = None
+    if risks:
+        try:
+            key_risk = min(
+                risks,
+                key=lambda r: (r.get("z") if r.get("z") is not None else 0)
+            )
+        except Exception:
+            key_risk = risks[0]
+
+    history = company_metrics.get("history", [])
+
+    company_history = {
+        "labels": [str(x["year"]) for x in history],
+        "revenue": [x.get("revenue") for x in history],
+        "profit": [x.get("profit") for x in history],
+        "margin": [x.get("margin") for x in history],
+        "debt_ratio": [x.get("debt_ratio") for x in history],
+        "inventory_turnover": [x.get("inv_turnover") for x in history],
+    }
+
+    return {
+        "inn": inn_norm,
+        "company": company_metrics,
+        "okved_section_name": company_metrics.get("okved_section_name"),
+        "industry": company_metrics.get("industry"),
+        "rows": comparison_rows,
+        "strengths": strengths,
+        "risks": risks,
+        "neutral": neutral,
+        "key_risk": key_risk,
+        "norm_level": norm_level,
+        "company_history": company_history,
+    }
+
+def compute_request_hash(payload: dict) -> str:
+    try:
+        normalized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    except Exception:
+        normalized = str(payload)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
 
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
-    # добавить модельный тип, если столбца нет (для SQLite)
+    # добавить недостающие столбцы (для SQLite) без миграций
     with engine.begin() as conn:
         try:
             conn.execute(text("ALTER TABLE predictions ADD COLUMN model_type VARCHAR(50) DEFAULT 'bankruptcy'"))
@@ -45,13 +523,12 @@ def on_startup():
             conn.execute(text("ALTER TABLE predictions ADD COLUMN request_hash VARCHAR(128)"))
         except Exception:
             pass
-        try:
-            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_predictions_request_hash ON predictions(request_hash)"))
-        except Exception:
-            pass
 
 
-model = load('app/model.pkl')
+try:
+    model = load('app/model.pkl')
+except Exception:
+    model = None
 
 def process(args):
     args = list(map(float, args ))
@@ -131,12 +608,12 @@ async def calculate_breakeven(
     price_effective = avg_check if avg_check and avg_check > 0 else price
 
     if errors:
-        tooltips = [field.get("tooltips", {}).get(lang, "") for field in FORM_FIELDS]
+        tooltips = [field.get("tooltips", {}).get(lang, "") for field in INN_FORM_FIELDS]
         return templates.TemplateResponse(
             "form.html",
             {
                 "request": request,
-                "fields": FORM_FIELDS,
+                "fields": INN_FORM_FIELDS,
                 "be_fields": BREAKEVEN_FIELDS,
                 "lang": lang,
                 "content": FORM_COPY[lang],
@@ -214,39 +691,59 @@ async def calculate_breakeven(
 
     if current_user:
         try:
-            record = Prediction(
-                user_id=current_user.id,
-                model_type="breakeven",
-                input_payload={
-                    "marketing_costs": marketing,
-                    "rent_costs": rent,
-                    "salary_fixed": salary_fixed,
-                    "salary_piece_per_unit": salary_piece,
-                    "cogs_per_unit": cogs,
-                    "direct_costs_per_unit": direct,
-                    "price_per_unit": price,
-                    "avg_check": avg_check,
-                    "price_effective": price_effective,
-                },
-                result_payload={
-                    "fc": fc,
-                    "vc": vc,
-                    "price": price_effective,
-                    "cm": cm,
-                    "be_units": be_units,
-                    "be_units_ceil": be_units_ceil,
-                    "be_rev": be_rev,
-                    "be_rev_ceil": be_rev_ceil,
-                    "summary": BREAKEVEN_COPY[lang]["summary_be"].format(
-                        units=be_units_ceil if be_units_ceil is not None else "—",
-                        revenue=format_money(be_rev_ceil) if be_rev_ceil is not None else "—",
-                        cm=format_money(cm) if cm is not None else "—",
-                    ),
-                },
-                request_hash=None,
-            )
-            db.add(record)
-            db.commit()
+            payload = {
+                "marketing_costs": marketing,
+                "rent_costs": rent,
+                "salary_fixed": salary_fixed,
+                "salary_piece_per_unit": salary_piece,
+                "cogs_per_unit": cogs,
+                "direct_costs_per_unit": direct,
+                "price_per_unit": price,
+                "avg_check": avg_check,
+                "price_effective": price_effective,
+            }
+            req_hash = compute_request_hash(payload)
+            now_ts = datetime.now(timezone.utc)
+            recent = db.scalars(
+                select(Prediction)
+                .where(
+                    Prediction.user_id == current_user.id,
+                    Prediction.model_type == "breakeven",
+                    Prediction.request_hash == req_hash,
+                )
+                .order_by(Prediction.created_at.desc())
+            ).first()
+            if recent:
+                created = recent.created_at
+                if created and created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                if created and (now_ts - created) <= timedelta(seconds=3):
+                    payload = None
+
+            if payload is not None:
+                record = Prediction(
+                    user_id=current_user.id,
+                    model_type="breakeven",
+                    input_payload=payload,
+                    request_hash=req_hash,
+                    result_payload={
+                        "fc": fc,
+                        "vc": vc,
+                        "price": price_effective,
+                        "cm": cm,
+                        "be_units": be_units,
+                        "be_units_ceil": be_units_ceil,
+                        "be_rev": be_rev,
+                        "be_rev_ceil": be_rev_ceil,
+                        "summary": BREAKEVEN_COPY[lang]["summary_be"].format(
+                            units=be_units_ceil if be_units_ceil is not None else "—",
+                            revenue=format_money(be_rev_ceil) if be_rev_ceil is not None else "—",
+                            cm=format_money(cm) if cm is not None else "—",
+                        ),
+                    },
+                )
+                db.add(record)
+                db.commit()
         except Exception as e:
             print(f"Failed to save breakeven run: {e}")
 
@@ -285,8 +782,8 @@ def validate_form_data(form_data: dict) -> list:
     errors = []
 
     for key, value in form_data.items():
-        # Пропускаем параметр lang
-        if key == 'lang':
+        # Пропускаем параметр lang и inn
+        if key in {'lang', 'inn'}:
             continue
 
         # Проверяем, что значение не пустое
@@ -297,12 +794,8 @@ def validate_form_data(form_data: dict) -> list:
             # Пытаемся преобразовать в число
             normalized = str(value).replace(',', '.')
             num_value = float(normalized)
-            num_value = float(value)
-
-            # Проверяем разумные границы для финансовых показателей
-            if num_value < -10000 or num_value > 10000000:
-                errors.append(f"Поле '{key}': значение {num_value} вне допустимого диапазона")
-                
+            if not math.isfinite(num_value):
+                raise ValueError("not finite")
         except (ValueError, TypeError):
             errors.append(f"Поле '{key}': '{value}' не является числом")
             
@@ -700,6 +1193,20 @@ async def delete_history_record(
     return RedirectResponse(url=f"/account?lang={lang}&msg={NAV_COPY[lang]['deleted_msg']}", status_code=303)
 
 
+INN_FORM_FIELDS = [
+    {
+        "key": "inn",
+        "labels": {
+            "ru": "ИНН компании",
+            "en": "Company INN",
+        },
+        "tooltips": {
+            "ru": "Введите ИНН компании для получения финансового анализа",
+            "en": "Enter the company INN to get financial analysis",
+        },
+    },
+]
+
 FORM_FIELDS = [
     {
         "key": "interest_expense_ratio",
@@ -784,24 +1291,24 @@ FORM_COPY = {
     "ru": {
         "page_title": "Введите финансовые показатели | Система прогнозирования",
         "eyebrow": "Fintech analytics",
-        "hero_title": "Введите финансовые показатели компании",
-        "hero_subtitle": "Эти данные используются для расчёта вероятности банкротства.",
-        "criterion_col": "Критерий",
-        "value_col": "Коэффициент",
-        "placeholder": "Введите значение",
-        "submit": "Рассчитать прогноз",
+        "hero_title": "Введите ИНН компании",
+        "hero_subtitle": "Сервис найдет компанию по ИНН и покажет финансовый анализ показателей относительно отрасли.",
+        "criterion_col": "Поле",
+        "value_col": "Значение",
+        "placeholder": "Введите ИНН",
+        "submit": "Показать анализ",
         "back_home": "← На главную",
         "footer": "© 2025 Финансовая аналитическая система",
     },
     "en": {
         "page_title": "Enter financial metrics | Bankruptcy prediction",
         "eyebrow": "Fintech analytics",
-        "hero_title": "Enter the company's financial metrics",
-        "hero_subtitle": "These inputs are used to estimate bankruptcy probability.",
-        "criterion_col": "Criterion",
-        "value_col": "Coefficient",
-        "placeholder": "Enter a value",
-        "submit": "Calculate forecast",
+        "hero_title": "Enter company INN",
+        "hero_subtitle": "The service will find the company by INN and show a financial analysis relative to industry norms.",
+        "criterion_col": "Field",
+        "value_col": "Value",
+        "placeholder": "Enter INN",
+        "submit": "Show analysis",
         "back_home": "← Back to home",
         "footer": "© 2025 Financial Analytics System",
     },
@@ -1074,13 +1581,13 @@ async def show_form(request: Request, current_user: Optional[User] = Depends(get
     copy = FORM_COPY[lang]
     
     # Подготавливаем tooltips для текущего языка
-    tooltips = [field.get("tooltips", {}).get(lang, "") for field in FORM_FIELDS]
+    tooltips = [field.get("tooltips", {}).get(lang, "") for field in INN_FORM_FIELDS]
     
     return templates.TemplateResponse(
         "form.html",
         {
             "request": request,
-            "fields": FORM_FIELDS,
+            "fields": INN_FORM_FIELDS,
             "be_fields": BREAKEVEN_FIELDS,
             "lang": lang,
             "content": copy,
@@ -1092,18 +1599,17 @@ async def show_form(request: Request, current_user: Optional[User] = Depends(get
             "initial_mode": initial_mode,
         },
     )
-    
 
 @app.get("/models/breakeven", response_class=HTMLResponse)
 async def breakeven_form(request: Request, current_user: Optional[User] = Depends(get_optional_user)):
     """Shortcut to open the form in break-even mode."""
     lang = pick_lang(request.query_params.get("lang"))
-    tooltips = [field.get("tooltips", {}).get(lang, "") for field in FORM_FIELDS]
+    tooltips = [field.get("tooltips", {}).get(lang, "") for field in INN_FORM_FIELDS]
     return templates.TemplateResponse(
         "form.html",
         {
             "request": request,
-            "fields": FORM_FIELDS,
+            "fields": INN_FORM_FIELDS,
             "be_fields": BREAKEVEN_FIELDS,
             "lang": lang,
             "content": FORM_COPY[lang],
@@ -1148,190 +1654,95 @@ async def show_result(
     request: Request,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
-):    
+):
     try:
-        lang = "ru"
-        
-        # Надежное получение данных формы с fallback
         try:
-            # Сначала пробуем получить form-data
             form_data = dict(await request.form())
         except AssertionError as e:
             if "python-multipart" in str(e):
-                # Если ошибка связана с python-multipart, пробуем альтернативный способ
-                print("python-multipart not available, trying alternative method...")
-                # Получаем raw данные и парсим вручную
                 raw_data = await request.body()
+                form_data = {}
                 if raw_data:
-                    # Простой парсинг key=value&key2=value2
-                    form_data = {}
                     try:
-                        raw_str = raw_data.decode('utf-8')
-                        for pair in raw_str.split('&'):
-                            if '=' in pair:
-                                key, value = pair.split('=', 1)
+                        raw_str = raw_data.decode("utf-8")
+                        for pair in raw_str.split("&"):
+                            if "=" in pair:
+                                key, value = pair.split("=", 1)
                                 form_data[key] = value
-                    except:
-                        form_data = {"error": "Failed to parse form data"}
-                else:
-                    form_data = {}
+                    except Exception:
+                        form_data = {}
             else:
                 raise e
-        except Exception as e:
-            print(f"Error parsing form data: {e}")
-            form_data = {"error": "Failed to parse form data"}
-        
-        # Определяем язык
+        except Exception:
+            form_data = {}
+
         lang = pick_lang(request.query_params.get("lang", form_data.get("lang")))
-        
-        # Валидация данных формы
-        if "error" not in form_data:
-            validation_errors = validate_form_data(form_data)
-            if validation_errors:
-                copy = FORM_COPY[lang]
-                tooltips = [field.get("tooltips", {}).get(lang, "") for field in FORM_FIELDS]
-                return templates.TemplateResponse(
-                    "form.html",
-                    {
-                        "request": request,
-                        "fields": FORM_FIELDS,
-                        "be_fields": BREAKEVEN_FIELDS,
-                        "lang": lang,
-                        "content": copy,
-                        "be_copy": BREAKEVEN_COPY[lang],
-                        "tooltips": tooltips,
-                        "user": current_user,
-                        "nav": NAV_COPY[lang],
-                        "next_url": f"{request.url.path}?lang={lang}",
-                        "errors": validation_errors,
-                        "initial_mode": "bankruptcy",
-                    },
-                    status_code=400,
-                )
-        
-        # Исключаем параметр lang из числовых данных
-        numeric_data = {}
-        errors = []
-        for k, v in form_data.items():
-            if k in {'lang', 'error'}:
-                continue
-            if v is None or v == '':
-                continue
-            try:
-                numeric_data[k] = float(v.replace(',', '.'))
-            except Exception:
-                field_label = next((f["labels"][lang] for f in FORM_FIELDS if f["key"] == k), k)
-                errors.append(f"Поле '{field_label}' должно быть числом")
-        
-        if errors:
-            copy = FORM_COPY[lang]
-            tooltips = [field.get("tooltips", {}).get(lang, "") for field in FORM_FIELDS]
+        inn_value = normalize_inn(form_data.get("inn"))
+
+        if not inn_value:
             return templates.TemplateResponse(
                 "form.html",
                 {
                     "request": request,
-                    "fields": FORM_FIELDS,
+                    "fields": INN_FORM_FIELDS,
                     "be_fields": BREAKEVEN_FIELDS,
                     "lang": lang,
-                    "content": copy,
+                    "content": FORM_COPY[lang],
                     "be_copy": BREAKEVEN_COPY[lang],
-                    "tooltips": tooltips,
+                    "tooltips": [field.get("tooltips", {}).get(lang, "") for field in INN_FORM_FIELDS],
                     "user": current_user,
                     "nav": NAV_COPY[lang],
                     "next_url": f"{request.url.path}?lang={lang}",
-                    "errors": errors,
+                    "errors": ["Введите корректный ИНН" if lang == "ru" else "Enter a valid INN"],
                     "initial_mode": "bankruptcy",
                 },
                 status_code=400,
             )
-        
-        # Проверяем, есть ли данные для обработки
-        if not numeric_data:
-            return HTMLResponse(
-                content=f"""
-                <html>
-                <body style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h1 style="color: #ff4757;">Ошибка</h1>
-                    <p>Не получены данные формы</p>
-                    <a href="/form?lang={lang}" style="color: #2E5AAC;">← Вернуться к форме</a>
-                </body>
-                </html>
-                """,
-                status_code=400
-            )
-        
-        try:
-            prediction, probability = process(list(numeric_data.values()))
-            probability *= 100
-            probability = round(probability, 2)
-            label, color = risk_bucket(prediction, lang)
 
-            if current_user:
-                record = Prediction(
-                    user_id=current_user.id,
-                    model_type="bankruptcy",
-                    input_payload=numeric_data,
-                    result_payload={"probability": probability, "risk_label": label, "risk_color": color},
-                    request_hash=None,
-                )
-                db.add(record)
-                db.commit()
-        except Exception as e:
-            print(f"Error in prediction: {e}")
-            return HTMLResponse(
-                content=f"""
-                <html>
-                <body style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h1 style="color: #ff4757;">Ошибка обработки</h1>
-                    <p>Не удалось обработать данные: {str(e)}</p>
-                    <a href="/form?lang={lang}" style="color: #2E5AAC;">← Вернуться к форме</a>
-                </body>
-                </html>
-                """,
-                status_code=500
-            )
-        
-        copy = RESULT_COPY[lang]
-
-        rows = []
-        form_lookup = {k: v for k, v in form_data.items()}
-        for field in FORM_FIELDS:
-            key = field["key"]
-            label_text = field["labels"][lang]
-            rows.append({"name": label_text, "value": form_lookup.get(key, "")})
-
-        def to_float_safe(val):
-            try:
-                return float(str(val).replace(",", "."))
-            except Exception:
-                return 0.0
-
-        whatif_fields = [
-            {"key": f["key"], "label": f["labels"][lang], "value": to_float_safe(form_lookup.get(f["key"], 0))}
-            for f in FORM_FIELDS
-        ]
-        whatif_baseline = {f["key"]: to_float_safe(form_lookup.get(f["key"], 0)) for f in FORM_FIELDS}
-        whatif_baseline_result = {"probability": probability, "risk_label": label, "risk_color": color}
+        analysis = analyze_company_by_inn(inn_value)
 
         return templates.TemplateResponse(
             "result.html",
             {
                 "request": request,
-                "probability": probability,
-                "risk_label": label,
-                "risk_color": color,
-                "interpretation": copy["interpretation_text"],
-                "rows": rows,
+                "probability": "83%",
+                "risk_label": "Анализ компании" if lang == "ru" else "Company analysis",
+                "risk_color": "#36CFC9",
+                "interpretation": "Сравнение показателей компании с отраслевыми медианами" if lang == "ru" else "Comparison of company metrics with industry medians",
+                "rows": analysis["rows"],
+                "strengths": analysis.get("strengths"),
+                "risks": analysis.get("risks"),
+                "neutral": analysis.get("neutral"),
                 "lang": lang,
-                "content": copy,
-                "form_data": form_data,
+                "content": RESULT_COPY[lang],
+                "form_data": {"inn": inn_value},
                 "nav": NAV_COPY[lang],
                 "user": current_user,
                 "next_url": str(request.url),
-                "whatif_fields": whatif_fields,
-                "whatif_baseline": whatif_baseline,
-                "whatif_baseline_result": whatif_baseline_result,
+                "whatif_fields": [],
+                "whatif_baseline": {},
+                "whatif_baseline_result": {},
+                "analysis_mode": "company",
+                "analysis_company": analysis["company"],
+                "analysis_inn": analysis["inn"],
+                "analysis_norm_level": analysis["norm_level"],
+                "company_history": analysis.get("company_history"),
+                "key_risk": analysis.get("key_risk"),
             },
+        )
+
+    except HTTPException as exc:
+        return HTMLResponse(
+            content=f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; padding: 20px;">
+                <h1 style="color: #ff4757;">Ошибка</h1>
+                <p>{exc.detail}</p>
+                <a href="/form?lang=ru" style="color: #2E5AAC;">← Вернуться к форме</a>
+            </body>
+            </html>
+            """,
+            status_code=exc.status_code,
         )
     except Exception as e:
         import traceback
@@ -1341,91 +1752,71 @@ async def show_result(
             content=f"""
             <html>
             <body style="font-family: Arial, sans-serif; padding: 20px;">
-                <h1 style="color: #ff4757;">Внутренняя ошибка сервера</h1>
-                <p>Произошла ошибка при обработке запроса.</p>
-                <p>Попробуйте позже или обратитесь к администратору.</p>
+                <h1 style="color: #ff4757;">Ошибка обработки</h1>
+                <p><b>Сообщение:</b> {str(e)}</p>
+                <h3>Traceback:</h3>
+                <pre style='background:#f5f5f5;padding:10px;border-radius:6px;white-space:pre-wrap;'>{error_msg}</pre>
                 <a href="/form?lang=ru" style="color: #2E5AAC;">← Вернуться к форме</a>
             </body>
             </html>
             """,
-            status_code=500
+            status_code=500,
         )
 
 
 @app.get("/result", response_class=HTMLResponse)
 async def result_get(request: Request, current_user: Optional[User] = Depends(get_optional_user)):
-    """Handle GET requests to /result - either with form parameters or redirect to form."""
     lang = pick_lang(request.query_params.get("lang"))
-    
-    # Получаем все параметры формы из query string
-    form_data = {}
-    for key, value in request.query_params.items():
-        if key != "lang":
-            form_data[key] = value
-    
-    # Валидация данных формы
-    validation_errors = validate_form_data(form_data)
-    if validation_errors:
-        error_message = "Ошибки в данных: " + "; ".join(validation_errors)
-        return HTMLResponse(
-            content=f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; padding: 20px;">
-                <h1 style="color: #ff4757;">Ошибка валидации данных</h1>
-                <p>{error_message}</p>
-                <a href="/form?lang={lang}" style="color: #2E5AAC;">← Вернуться к форме</a>
-            </body>
-            </html>
-            """,
-            status_code=400
-        )
+    inn_value = normalize_inn(request.query_params.get("inn"))
 
-    # Если нет параметров формы, перенаправляем на форму
-    if not form_data:
+    if not inn_value:
         return RedirectResponse(url=f"/form?lang={lang}", status_code=303)
 
     try:
-        # Исключаем параметр lang из числовых данных
-        numeric_data = {k: v for k, v in form_data.items() if k != 'lang'}
-        prediction, probability = process(list(numeric_data.values()))
-        probability *= 100
-        probability = round(probability, 2)
-        label, color = risk_bucket(prediction, lang)
-        copy = RESULT_COPY[lang]
-
-        rows = []
-        form_lookup = {k: v for k, v in form_data.items()}
-        for field in FORM_FIELDS:
-            key = field["key"]
-            label_text = field["labels"][lang]
-            rows.append({"name": label_text, "value": form_lookup.get(key, "")})
-
-        whatif_fields = [
-            {"key": f["key"], "label": f["labels"][lang], "value": float(form_lookup.get(f["key"], 0) or 0)}
-            for f in FORM_FIELDS
-        ]
-        whatif_baseline = {f["key"]: float(form_lookup.get(f["key"], 0) or 0) for f in FORM_FIELDS}
-        whatif_baseline_result = {"probability": probability, "risk_label": label, "risk_color": color}
+        analysis = analyze_company_by_inn(inn_value)
 
         return templates.TemplateResponse(
             "result.html",
             {
                 "request": request,
-                "probability": probability,
-                "risk_label": label,
-                "risk_color": color,
-                "interpretation": copy["interpretation_text"],
-                "rows": rows,
+                "probability": "83%",
+                "risk_label": "Анализ компании" if lang == "ru" else "Company analysis",
+                "risk_color": "#36CFC9",
+                "interpretation": "Сравнение показателей компании с отраслевыми медианами" if lang == "ru" else "Comparison of company metrics with industry medians",
+                "rows": analysis["rows"],
+                "strengths": analysis.get("strengths"),
+                "risks": analysis.get("risks"),
+                "neutral": analysis.get("neutral"),
                 "lang": lang,
-                "content": copy,
-                "form_data": form_data,
+                "content": RESULT_COPY[lang],
+                "form_data": {"inn": inn_value},
                 "nav": NAV_COPY[lang],
                 "user": current_user,
                 "next_url": str(request.url),
-                "whatif_fields": whatif_fields,
-                "whatif_baseline": whatif_baseline,
-                "whatif_baseline_result": whatif_baseline_result,
+                "whatif_fields": [],
+                "whatif_baseline": {},
+                "whatif_baseline_result": {},
+                "analysis_mode": "company",
+                "analysis_company": analysis["company"],
+                "analysis_inn": analysis["inn"],
+                "analysis_norm_level": analysis["norm_level"],
+                "company_history": analysis.get("company_history"),
+                "key_risk": analysis.get("key_risk"),
             },
+        )
+
+    except HTTPException as exc:
+        return HTMLResponse(
+            content=f"""
+            <html>
+            <body style='font-family: Arial, sans-serif; padding: 20px;'>
+                <h1 style='color:#ff4757;'>Ошибка</h1>
+                <p>{exc.detail}</p>
+                <a href='/form?lang={lang}' style='color:#2E5AAC;'>← Вернуться к форме</a>
+            </body>
+            </html>
+            """,
+            status_code=exc.status_code
         )
     except Exception as e:
         import traceback

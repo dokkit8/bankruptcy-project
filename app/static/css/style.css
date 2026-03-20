@@ -776,10 +776,53 @@ html.page-entered body {
 }
 .result-hero {
     padding-inline: clamp(14px, 4vw, 22px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 @media (max-width: 767px) {
     .result-hero {
         padding-inline: 16px;
+        gap: 12px;
+    }
+}
+.pred-hero__head {
+    display: block;
+    gap: 16px;
+}
+.pred-hero__text { min-width: 0; }
+.pred-hero__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: flex-start;
+    margin-top: 18px;
+}
+.pred-hero__title {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    line-height: 1.2;
+}
+.pred-hero__title span {
+    display: block;
+}
+.pred-hero__subtitle {
+    margin: 14px 0 0;
+    line-height: 1.4;
+}
+@media (max-width: 768px) {
+    .pred-hero__actions {
+        width: auto;
+        margin-top: 16px;
+    }
+    .pred-hero__actions .cta,
+    .pred-hero__actions button,
+    .pred-hero__actions a {
+        width: auto;
+        justify-content: center;
+        margin: 0;
     }
 }
 
@@ -889,12 +932,252 @@ html.page-entered body {
     border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+
 .card {
     background: rgba(28, 31, 36, 0.9);
     border: 1px solid rgba(143, 169, 217, 0.35);
     border-radius: 14px;
     padding: 20px;
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.25);
+}
+
+/* ==========================
+   ANALYTICS DASHBOARD
+   ========================== */
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.metric-card {
+    padding: 18px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(54,207,201,0.45);
+    box-shadow: 0 14px 28px rgba(0,0,0,0.35);
+}
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.metric-title {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--white);
+}
+
+.metric-values {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.metric-value-box {
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.metric-label {
+    font-size: 0.8rem;
+    color: var(--steel-light);
+    margin-bottom: 2px;
+}
+
+.metric-number {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--white);
+}
+
+.metric-status-good {
+    color: #36cfc9;
+    font-weight: 700;
+}
+
+.metric-status-mid {
+    color: #f5c542;
+    font-weight: 700;
+}
+
+.metric-status-bad {
+    color: #ff6b6b;
+    font-weight: 700;
+}
+
+/* ==========================
+   CHARTS
+   ========================== */
+
+.chart-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 22px;
+}
+
+.chart-card {
+    background: rgba(28,31,36,0.9);
+    border: 1px solid rgba(143,169,217,0.35);
+    border-radius: 16px;
+    padding: 16px;
+}
+
+.chart-card canvas {
+    width: 100% !important;
+    height: 280px !important;
+}
+
+.chart-title {
+    font-size: 0.95rem;
+    color: var(--steel-light);
+    margin-bottom: 8px;
+}
+
+/* ==========================
+   RESULT SUMMARY BLOCK
+   ========================== */
+
+
+.summary-box {
+    padding: 18px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.98rem;
+    line-height: 1.6;
+}
+
+/* ===== Result page layout helpers ===== */
+
+.result-top-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 24px;
+    align-items: center;
+}
+
+.result-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0,1fr));
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.result-tags {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.result-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.result-tag--good {
+    background: rgba(68,196,161,0.14);
+    color: #2d8f72;
+}
+
+.result-tag--mid {
+    background: rgba(247,194,72,0.16);
+    color: #a47b13;
+}
+
+.result-tag--bad {
+    background: rgba(255,107,107,0.14);
+    color: #c44e4e;
+}
+
+.strength-list,
+.risk-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.strength-item {
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: rgba(68,196,161,0.10);
+    border: 1px solid rgba(68,196,161,0.22);
+}
+
+.risk-item {
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: rgba(255,107,107,0.10);
+    border: 1px solid rgba(255,107,107,0.22);
+}
+
+.neutral-item {
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: rgba(247,194,72,0.10);
+    border: 1px solid rgba(247,194,72,0.22);
+}
+
+.result-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+
+    .result-top-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .result-two-col {
+        grid-template-columns: 1fr;
+    }
+
+    .result-meta-grid {
+        grid-template-columns: 1fr;
+    }
+
+}
+
+/* ==========================
+   RESPONSIVE RESULT PAGE
+   ========================== */
+
+@media (max-width: 768px) {
+
+    .metric-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-grid {
+        grid-template-columns: 1fr;
+    }
+
 }
 
 .card h3 {
@@ -1526,6 +1809,11 @@ html.page-entered body {
     .actions-cell .link-button {
         width: 100%;
         display: inline-block;
+        text-align: center;
+    }
+    .why-item,
+    .why-title,
+    .why-desc {
         text-align: center;
     }
 }

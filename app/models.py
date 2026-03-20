@@ -27,6 +27,6 @@ class Prediction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     input_payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     result_payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    request_hash: Mapped[Optional[str]] = mapped_column(String(128), unique=False, nullable=True)
+    request_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
 
     user: Mapped[User] = relationship("User", back_populates="predictions")

@@ -58,6 +58,29 @@ document.addEventListener("click", (e) => {
     const form = document.getElementById(formId);
     if (!form) { console.warn(`${formId} not found`); return; }
 
+    const submittingState = {
+      flag: false,
+      buttons: Array.from(form.querySelectorAll('button[type="submit"], .cta')),
+      saveText: null,
+    };
+
+    function setSubmitting(on) {
+      submittingState.flag = on;
+      submittingState.buttons.forEach((btn) => {
+        if (!btn) return;
+        if (on) {
+          if (!submittingState.saveText) submittingState.saveText = btn.textContent;
+          btn.disabled = true;
+          btn.classList.add("is-loading");
+          btn.textContent = btn.dataset.loading || btn.textContent;
+        } else {
+          btn.disabled = false;
+          btn.classList.remove("is-loading");
+          if (submittingState.saveText) btn.textContent = submittingState.saveText;
+        }
+      });
+    }
+
     const fields = Array.from(form.querySelectorAll("[data-numeric='true']"));
     if (!fields.length) { console.warn(`no numeric fields found in ${formId}`); return; }
 
@@ -100,6 +123,10 @@ document.addEventListener("click", (e) => {
     }
 
     form.addEventListener("submit", (e) => {
+      if (form.dataset.submitting === "1") {
+        e.preventDefault();
+        return;
+      }
       let hasInvalid = false;
       let firstInvalid = null;
 
@@ -119,6 +146,8 @@ document.addEventListener("click", (e) => {
         firstInvalid?.focus();
       } else if (banner) {
         banner.hidden = true;
+        form.dataset.submitting = "1";
+        setSubmitting(true);
       }
     });
 
@@ -130,6 +159,10 @@ document.addEventListener("click", (e) => {
       if (ok && banner) {
         const stillInvalid = fields.some((inp) => inp.classList.contains("input-error"));
         if (!stillInvalid) banner.hidden = true;
+      }
+      if (!ok && form.dataset.submitting === "1") {
+        form.dataset.submitting = "0";
+        setSubmitting(false);
       }
     });
 
